@@ -1,4 +1,4 @@
-﻿namespace EasyFind.Api.Models.Dto.UserDtos
+﻿namespace EasyFind.Api.Models.Dto.UserDto
 {
     public class LoginResponseDto
     {

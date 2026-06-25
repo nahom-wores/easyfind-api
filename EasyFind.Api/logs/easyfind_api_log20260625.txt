@@ -1,0 +1,1 @@
+2026-06-25 10:59:18.433 +03:00 [ERR] An error occurred using the connection to database 'EasyFind' on server 'tcp://localhost:5433'.

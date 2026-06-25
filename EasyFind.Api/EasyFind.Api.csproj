@@ -13,11 +13,16 @@
         <PackageReference Include="AspNetCore.HealthChecks.Redis" Version="9.0.0" />
         <PackageReference Include="AspNetCore.HealthChecks.UI.Client" Version="9.0.0" />
         <PackageReference Include="AutoMapper" Version="16.1.1" />
+        <PackageReference Include="CloudinaryDotNet" Version="1.29.2" />
         <PackageReference Include="FluentValidation" Version="12.1.1" />
         <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
         <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.9" />
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.1"/>
         <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
+          <PrivateAssets>all</PrivateAssets>
+          <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.9">
           <PrivateAssets>all</PrivateAssets>
           <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
@@ -35,11 +40,9 @@
     </ItemGroup>
 
     <ItemGroup>
-      <Folder Include="Controllers\" />
       <Folder Include="Extensions\" />
       <Folder Include="Models\Dto\" />
       <Folder Include="Models\Enum\" />
-      <Folder Include="Services\" />
     </ItemGroup>
 
 </Project>

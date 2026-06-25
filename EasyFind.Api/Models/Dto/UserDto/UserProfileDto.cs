@@ -12,6 +12,7 @@ namespace EasyFind.Api.Models.Dto.UserDto
         public string PhoneNumber { get; set; }
         public string ProfilePictureUrl { get; set; }
         public bool IsVerified { get; set; }
+        public List<string> Roles { get; set; } = new List<string>();
         public DateTimeOffset CreatedAt { get; set; } 
     }
 }
