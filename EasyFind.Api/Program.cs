@@ -16,7 +16,7 @@ using Scalar.AspNetCore;
 using Serilog;
 using StackExchange.Redis;
 
-AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+//AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.

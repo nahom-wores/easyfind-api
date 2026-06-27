@@ -1,6 +1,6 @@
 ﻿namespace EasyFind.Api.Models.Dto.Common
 {
-    public class PagedResult<T>
+    public class xPagedResult<T>
     {
         // The actual data for current page
         public List<T> Data { get; set; }
@@ -23,6 +23,4 @@
         // Helper for frontend: Can user go forward?
         public bool HasNextPage => PageNumber < TotalPages;
     }
-
-   
 }

@@ -17,22 +17,14 @@ namespace EasyFind.Api.Controllers.v1
     {
         
         //[EnableRateLimiting("auth")]
-        [HttpPost("register")]
+        [HttpPost("request-otp")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<ActionResult<ApiResponse>> Register([FromBody] LogInRequestDto model)
+        public async Task<ActionResult<ApiResponse>> SignIn([FromBody] LogInRequestDto model)
         {
             var response = new ApiResponse();
-            var isUnique = userService.IsUniqueUser(model.PhoneNumber);
-            if (!isUnique)
-            {
-                response.IsSuccess = false;
-                response.StatusCode = HttpStatusCode.BadRequest;
-                response.ErrorMessage.Add("User already exists.");
-                return BadRequest(response);
-            }
-
-            var userDto = await userService.Register(model);
+            
+            var userDto = await userService.RequestOtpAsync(model);
 
             if (!userDto.IsSuccess)
             {
@@ -49,42 +41,7 @@ namespace EasyFind.Api.Controllers.v1
             return StatusCode((int)HttpStatusCode.Created, response);
         }
 
-        //[EnableRateLimiting("otp")]
-        [HttpPost("login")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        public async Task<ActionResult<ApiResponse>> Login([FromBody] LogInRequestDto model)
-        {
-            var response = new ApiResponse();
-            var isUnique = userService.IsUniqueUser(model.PhoneNumber);
-            if (isUnique)
-            {
-                var userDto = await userService.Register(model);
-                if (!userDto.IsSuccess)
-                {
-                    response.IsSuccess = false;
-                    response.StatusCode = HttpStatusCode.BadRequest;
-                    response.ErrorMessage.Add($"{userDto.ResultMessage}");
-                    return BadRequest(response);
-                }
-                response.IsSuccess = true;
-                response.StatusCode = HttpStatusCode.OK;
-                response.Result = userDto;
-                return Ok(response);
-            }
-            var logInDto = await userService.Login(model);
-            if (!logInDto.IsSuccess)
-            {
-                response.IsSuccess = false;
-                response.StatusCode = HttpStatusCode.BadRequest;
-                response.ErrorMessage.Add("Error sending OTP");
-                return BadRequest(response);
-            }
-            response.StatusCode = HttpStatusCode.OK;
-            response.IsSuccess = true;
-            response.Result = logInDto;
-            return Ok(response);
-        }
+        
 
         [EnableRateLimiting("otp")]
         [HttpPost("verify-otp")]

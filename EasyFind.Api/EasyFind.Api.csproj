@@ -41,8 +41,6 @@
 
     <ItemGroup>
       <Folder Include="Extensions\" />
-      <Folder Include="Models\Dto\" />
-      <Folder Include="Models\Enum\" />
     </ItemGroup>
 
 </Project>

@@ -8,7 +8,7 @@ public interface IUserService
     bool IsUniqueUser(string username);
     Task<UserPhoneStatusDto> CheckUserPhoneStatusAsync(string userId);
     Task<LoginResponseDto> Login(LogInRequestDto loginRequestDTO);
-    Task<LoginResponseDto> Register(LogInRequestDto registerationRequestDTO);
+    Task<LoginResponseDto> RequestOtpAsync(LogInRequestDto registerationRequestDTO);
     Task<TokenDto> VerifyLogIn(VerifyOTPRequestDto verifyOTPRequestDTO);
     Task<UserProfileDto> GetUserProfileAsync(string userId);
     Task<UserProfileDto> UpdateUserProfileAsync(string userId, UpdateUserProfileDto updateUserProfileDto);

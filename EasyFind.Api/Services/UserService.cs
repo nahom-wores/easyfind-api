@@ -191,70 +191,51 @@ namespace EasyFind.Api.Services
         }
 
 
-        public async Task<LoginResponseDto> Register(LogInRequestDto registerationRequestDTO)
+        public async Task<LoginResponseDto> RequestOtpAsync(LogInRequestDto dto)
         {
-            var user = new ApplicationUser
-            {
-                UserName = registerationRequestDTO.PhoneNumber,
-                PhoneNumber = registerationRequestDTO.PhoneNumber,
-                TwoFactorEnabled = true,
-            };
+            // Find existing user, or create a new one
+            var user = await _userManager.FindByNameAsync(dto.PhoneNumber);
 
-            try
+            if (user == null)
             {
+                user = new ApplicationUser
+                {
+                    UserName = dto.PhoneNumber,
+                    PhoneNumber = dto.PhoneNumber,
+                    TwoFactorEnabled = true,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                };
 
                 var result = await _userManager.CreateAsync(user);
                 if (!result.Succeeded)
                 {
                     var errors = string.Join(", ", result.Errors.Select(e => e.Description));
-                    _logger.LogError($"User creation failed: {errors}");
-                    return new LoginResponseDto
-                    {
-                        ResultMessage = errors,
-                        IsSuccess = false,
-                        PhoneNumber = user.UserName,
-                    };
+                    _logger.LogError("User creation failed: {Errors}", errors);
+                    return new LoginResponseDto { IsSuccess = false, ResultMessage = errors };
                 }
 
-
-                // Fix: Use AddToRoleAsync instead of manual DB context manipulation
                 await _userManager.AddToRoleAsync(user, AppRoles.User);
-
-                // Generate and send OTP
-                var otp = await _userManager.GenerateTwoFactorTokenAsync(user, TokenOptions.DefaultPhoneProvider);
-
-                // Fix: Consistent brand messaging (MedaHub)
-                var sendOtpResult =
-                    await _smsService.SendOTPAsync(user.PhoneNumber, otp);
-
-                if (!sendOtpResult)
-                {
-                    return new LoginResponseDto
-                    {
-                        IsSuccess = false,
-                        PhoneNumber = user.UserName,
-                        ResultMessage = "Error Sending OTP"
-                    };
-                }
-
-                return new LoginResponseDto
-                {
-                    IsSuccess = true,
-                    PhoneNumber = user.UserName,
-                    ResultMessage = "OTP Message sent Successfully"
-                };
             }
-            catch (Exception e)
-            {
-                _logger.LogError(e, "Error occurred during user registration");
+
+            // From here, the path is identical for new AND returning users
+            var otp = await _userManager.GenerateTwoFactorTokenAsync(user, TokenOptions.DefaultPhoneProvider);
+            var sent = await _smsService.SendOTPAsync(user.PhoneNumber, otp);
+
+            if (!sent)
                 return new LoginResponseDto
                 {
                     IsSuccess = false,
-                    ResultMessage = "An internal error occurred during registration."
+                    PhoneNumber = user.UserName,
+                    ResultMessage = "Error sending OTP"
                 };
-            }
-        }
 
+            return new LoginResponseDto
+            {
+                IsSuccess = true,
+                PhoneNumber = user.UserName,
+                ResultMessage = "OTP sent successfully"
+            };
+        }
 
         public async Task<TokenDto> VerifyLogIn(VerifyOTPRequestDto verifyOTPRequestDTO)
         {
