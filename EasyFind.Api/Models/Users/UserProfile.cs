@@ -32,7 +32,11 @@ public class UserProfile
 
     [MaxLength(10)]
     public string? EnglishLevel { get; set; }      // CEFR: "B2", "C1"
-
+    
+    public DateOnly? DateOfBirth { get; set; }
+    public Sex? Sex { get; set; }
+    public PassportStatus? PassportStatus { get; set; }
+    
     // CV stored in Cloudinary (you already have ImageService;
     // we'll add a raw-file path for PDFs/docs)
     public string? CvFileUrl { get; set; }
@@ -56,4 +60,18 @@ public enum EducationLevel
     Master = 3,
     Phd = 4,
     Other = 99
+}
+
+public enum PassportStatus
+{
+    HasValid = 0,
+    Expired = 1,
+    Applying = 2,
+    None = 3,
+}
+public enum Sex
+{
+    Male = 0,
+    Female = 1,
+    PreferNotToSay = 99
 }

@@ -223,7 +223,17 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 {
     ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse 
 });
+// ── Seed Identity roles ──────────────────────────────
+using (var scope = app.Services.CreateScope())
+{
+    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
 
+    foreach (var role in new[] { AppRoles.Admin, AppRoles.User })
+    {
+        if (!await roleManager.RoleExistsAsync(role))
+            await roleManager.CreateAsync(new IdentityRole(role));
+    }
+}
 app.UseHttpsRedirection();
 app.UseRateLimiter();
 app.UseCors("AllowAll");

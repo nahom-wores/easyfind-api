@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using EasyFind.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace EasyFind.Api.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260629171603_applicationuser_fields_nullable")]
+    partial class applicationuser_fields_nullable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -311,18 +314,12 @@ namespace EasyFind.Api.Migrations
                     b.Property<DateTimeOffset?>("CvUploadedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<DateOnly?>("DateOfBirth")
-                        .HasColumnType("date");
-
                     b.Property<int>("EducationLevel")
                         .HasColumnType("integer");
 
                     b.Property<string>("EnglishLevel")
                         .HasMaxLength(10)
                         .HasColumnType("character varying(10)");
-
-                    b.Property<int?>("PassportStatus")
-                        .HasColumnType("integer");
 
                     b.Property<int[]>("PreferredJobCategories")
                         .HasColumnType("integer[]");
@@ -331,9 +328,6 @@ namespace EasyFind.Api.Migrations
                         .HasColumnType("integer[]");
 
                     b.Property<int>("SeekingType")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("Sex")
                         .HasColumnType("integer");
 
                     b.PrimitiveCollection<List<string>>("TargetCountries")

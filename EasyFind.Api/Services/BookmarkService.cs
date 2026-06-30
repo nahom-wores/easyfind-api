@@ -12,18 +12,18 @@ public class BookmarkService(ApplicationDbContext db) : IBookmarkService
 {
     private readonly ApplicationDbContext _db = db;
 
-    public async Task<(bool ok, string message)> AddAsync(string userId, Guid listingId, CancellationToken ct = default)
+    public async Task<Result> AddAsync(string userId, Guid listingId, CancellationToken ct = default)
     {
         // Verify the listing exists and is active (query filter excludes soft-deleted)
         var exists = await _db.Listings
             .AnyAsync(l => l.Id == listingId && l.IsActive, ct);
-        if (!exists) return (false, "Listing not found.");
+        if (!exists) return Result.NotFound("Listing not found");
         
         // The unique index (UserId, ListingId) is our real guard against duplicates.
         // We check first for a friendly message, but catch the race below.
         var already = await _db.Bookmarks
             .AnyAsync(b => b.UserId == userId && b.ListingId == listingId, ct);
-        if (already) return (true, "Already bookmarked.");
+        if (already) return Result.Success();
             
         _db.Bookmarks.Add(new Bookmark { UserId = userId, ListingId = listingId });
         try
@@ -33,22 +33,22 @@ public class BookmarkService(ApplicationDbContext db) : IBookmarkService
         catch (DbUpdateException)
         {
             // Unique index violation — two requests raced. Treat as success (idempotent).
-            return (true, "Already bookmarked.");
+            return Result.Conflict("Already bookmarked");
         }
 
-        return (true, "Bookmarked.");
+        return Result.Success();
     }
 
-    public async Task<(bool ok, string message)> RemoveAsync(string userId, Guid listingId, CancellationToken ct = default)
+    public async Task<Result> RemoveAsync(string userId, Guid listingId, CancellationToken ct = default)
     {
         var bookmark = await _db.Bookmarks
             .FirstOrDefaultAsync(b => b.UserId == userId && b.ListingId == listingId, ct);
 
-        if (bookmark == null) return (false, "Bookmark not found.");
+        if (bookmark == null) return Result.NotFound("Bookmark not found");
 
         _db.Bookmarks.Remove(bookmark);
         await _db.SaveChangesAsync(ct);
-        return (true, "Removed.");
+        return Result.Success();
     }
 
     public async Task<PagedResult<ListingFeedItemDto>> GetUserBookmarksAsync(string userId,

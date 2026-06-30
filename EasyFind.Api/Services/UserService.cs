@@ -1,6 +1,7 @@
 ﻿
 using EasyFind.Api.Data;
 using EasyFind.Api.Models.Auth;
+using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.UserDto;
 using EasyFind.Api.Services.IServices;
 using Microsoft.AspNetCore.Identity;
@@ -37,14 +38,15 @@ namespace EasyFind.Api.Services
         }
 
         #region User Profile
-        public async Task<UserProfileDto> GetUserProfileAsync(string userId)
+        public async Task<Result<UserProfileDto>> GetUserProfileAsync(string userId, CancellationToken ct = default)
         {
             var user = await _userManager.FindByIdAsync(userId);
-            if (user == null) return null;
+            if (user == null)
+                return Result<UserProfileDto>.NotFound("User not found.");
 
-            var userRoles = await _userManager.GetRolesAsync(user);
-    
-            return new UserProfileDto
+            var roles = await _userManager.GetRolesAsync(user);
+
+            var dto = new UserProfileDto
             {
                 FirstName = user.FirstName,
                 LastName = user.LastName,
@@ -53,33 +55,43 @@ namespace EasyFind.Api.Services
                 ProfilePictureUrl = user.ProfilePictureUrl,
                 IsVerified = user.PhoneNumberConfirmed || user.EmailConfirmed,
                 CreatedAt = user.CreatedAt,
-                Roles = userRoles.ToList() 
+                Roles = roles.ToList()
             };
+
+            return Result<UserProfileDto>.Success(dto);
         }
 
+
         // To-DO
-        public async Task<UserProfileDto> UpdateUserProfileAsync(string userId,
-            UpdateUserProfileDto updateUserProfileDto)
+        public async Task<Result<UserProfileDto>> UpdateUserProfileAsync(
+            string userId, UpdateUserProfileDto dto, CancellationToken ct = default)
         {
             var user = await _userManager.FindByIdAsync(userId);
-            user.FirstName = updateUserProfileDto.FirstName;
-            user.LastName = updateUserProfileDto.LastName;
-            user.PhoneNumber = updateUserProfileDto.PhoneNumber;
+            if (user == null)
+                return Result<UserProfileDto>.NotFound("User not found.");
+
+            user.FirstName = dto.FirstName;
+            user.LastName = dto.LastName;
+            user.PhoneNumber = dto.PhoneNumber;
+
             var result = await _userManager.UpdateAsync(user);
             if (!result.Succeeded)
             {
-                return null;
+                var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+                return Result<UserProfileDto>.Validation(errors);
             }
 
-            return new UserProfileDto
+            var updated = new UserProfileDto
             {
-                Email = user.Email,
-                PhoneNumber = user.PhoneNumber,
-                CreatedAt = user.CreatedAt,
                 FirstName = user.FirstName,
                 LastName = user.LastName,
+                Email = user.Email,
+                PhoneNumber = user.PhoneNumber,
                 ProfilePictureUrl = user.ProfilePictureUrl,
+                CreatedAt = user.CreatedAt,
             };
+
+            return Result<UserProfileDto>.Success(updated);
         }
 
         public async Task<PhoneNumberUpdateResponseDto> UpdateUserPhoneNumberAsync(string userId,
@@ -349,20 +361,24 @@ namespace EasyFind.Api.Services
 
         }
 
-        public async Task<bool> AssignRoleAsync(AssignRoleDto assignRoleDto)
+        public async Task<Result> AssignRoleAsync(AssignRoleDto dto, CancellationToken ct = default)
         {
-            var user = await _userManager.FindByIdAsync(assignRoleDto.UserId);
-            if (user == null) return false;
+            var user = await _userManager.FindByIdAsync(dto.UserId);
+            if (user == null)
+                return Result.NotFound("User not found.");
 
-            if (await _userManager.IsInRoleAsync(user, assignRoleDto.Role)) return true;
+            if (await _userManager.IsInRoleAsync(user, dto.Role))
+                return Result.Success();   // idempotent — already has the role
 
-            var result = await _userManager.AddToRoleAsync(user, assignRoleDto.Role);
-            if (result.Succeeded)
+            var result = await _userManager.AddToRoleAsync(user, dto.Role);
+            if (!result.Succeeded)
             {
-                await _userManager.UpdateSecurityStampAsync(user); // Important!
-                return true;
+                var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+                return Result.Validation(errors);
             }
-            return false;
+
+            await _userManager.UpdateSecurityStampAsync(user);
+            return Result.Success();
         }
     }
 }

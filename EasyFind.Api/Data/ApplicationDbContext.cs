@@ -64,7 +64,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(p => p.SeekingType).HasConversion<int>();
             entity.Property(p => p.EducationLevel).HasConversion<int>();
             entity.Property(p => p.TargetDegreeLevel).HasConversion<int>();
-
+            entity.Property(p => p.Sex).HasConversion<int>();
+            entity.Property(p => p.PassportStatus).HasConversion<int>();
             // Postgres array columns — List<T> maps to native arrays.
             // Enum lists need explicit int[] conversion.
             entity.Property(p => p.PreferredJobCategories)
@@ -76,7 +77,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
                 .HasConversion(
                     v => v.Select(f => (int)f).ToArray(),
                     v => v.Select(i => (ScholarshipField)i).ToList());
-
+            
             // TargetCountries is List<string> — maps to text[] natively,
             // no conversion needed.
         });

@@ -13,7 +13,7 @@ namespace EasyFind.Api.Controllers.v1
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiController]
     [ApiVersion("1.0")]
-    public class AuthController(IUserService userService, ITokenService tokenService) : ControllerBase
+    public class AuthController(IUserService userService, ITokenService tokenService) : ApiControllerBase
     {
         
         //[EnableRateLimiting("auth")]
@@ -29,13 +29,11 @@ namespace EasyFind.Api.Controllers.v1
             if (!userDto.IsSuccess)
             {
                 response.IsSuccess = false;
-                response.StatusCode = HttpStatusCode.BadRequest;
-                response.ErrorMessage.Add(userDto.ResultMessage);
+                response.Errors.Add(userDto.ResultMessage);
                 return BadRequest(response);
             }
 
             response.IsSuccess = true;
-            response.StatusCode = HttpStatusCode.Created;
             response.Result = userDto;
             
             return StatusCode((int)HttpStatusCode.Created, response);
@@ -54,12 +52,10 @@ namespace EasyFind.Api.Controllers.v1
             if (!verificationDto.IsSuccess)
             {
                 response.IsSuccess = false;
-                response.StatusCode = HttpStatusCode.BadRequest;
-                response.ErrorMessage.Add($"{verificationDto.Message}");
+                response.Errors.Add($"{verificationDto.Message}");
                 return BadRequest(response);
             }
             response.IsSuccess = true;
-            response.StatusCode = HttpStatusCode.OK;
             response.Result = verificationDto;
             return Ok(response);
         }
@@ -75,20 +71,17 @@ namespace EasyFind.Api.Controllers.v1
                 var tokenDtoResponse = await tokenService.RefreshAccessToken(tokenDto);
                 if (tokenDtoResponse == null)
                 {
-                    response.StatusCode = HttpStatusCode.BadRequest;
                     response.IsSuccess = false;
-                    response.ErrorMessage.Add("Invalid Token");
+                    response.Errors.Add("Invalid Token");
                     return BadRequest(response);
                 }
 
-                response.StatusCode = HttpStatusCode.OK;
                 response.Result = tokenDtoResponse;
                 return Ok(response);
             }
             else
             {
                 response.IsSuccess = false;
-                response.StatusCode = HttpStatusCode.BadRequest;
                 response.Result = "Invalid Input";
                 return BadRequest(response);
             }
@@ -102,7 +95,6 @@ namespace EasyFind.Api.Controllers.v1
             if (ModelState.IsValid)
             {
                 await tokenService.RevokeRefreshToken(tokenDto);
-                response.StatusCode = HttpStatusCode.OK;
                 return Ok(response);
             }
 
@@ -126,15 +118,13 @@ namespace EasyFind.Api.Controllers.v1
                 await userService.RevokeRefreshToken(tokenDto);
 
                 response.IsSuccess = true;
-                response.StatusCode = HttpStatusCode.OK;
                 response.Result = "Logged out successfully";
 
                 return Ok(response);
             }
             catch (Exception ex)
             {
-                response.StatusCode = HttpStatusCode.InternalServerError;
-                response.ErrorMessage.Add(ex.Message);
+                response.Errors.Add(ex.Message);
                 return StatusCode(500, response);
             }
         }
@@ -144,80 +134,21 @@ namespace EasyFind.Api.Controllers.v1
         
         [HttpGet("me")]
         [Authorize]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-        public async Task<ActionResult<ApiResponse>> GetCurrentUser()
+        public async Task<ActionResult<ApiResponse>> GetCurrentUser(CancellationToken ct)
         {
-            ApiResponse response = new();
-            try
-            {
-                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-                if (string.IsNullOrEmpty(userId))
-                {
-                    response.StatusCode = HttpStatusCode.Unauthorized;
-                    response.ErrorMessage.Add("User not authenticated");
-                    return Unauthorized(response);
-                }
-
-                var user = await userService.GetUserProfileAsync(userId);
-
-                if (user == null)
-                {
-                    response.StatusCode = HttpStatusCode.NotFound;
-                    response.ErrorMessage.Add("User not found");
-                    return NotFound(response);
-                }
-                
-                response.Result = user;
-                response.IsSuccess = true;
-                response.StatusCode = HttpStatusCode.OK;
-
-                return Ok(response);
-            }
-            catch (Exception ex)
-            {
-                response.StatusCode = HttpStatusCode.InternalServerError;
-                response.ErrorMessage.Add(ex.Message);
-                return StatusCode(500, response);
-            }
+            var result = await userService.GetUserProfileAsync(userId, ct);
+            return HandleResult(result);
         }
         // POST api/v1/auth/assign-role
         [HttpPost("assign-role")]
         [Authorize(Roles = "Admin")]
-        public async Task<ActionResult<ApiResponse>> AssignRole([FromBody] AssignRoleDto dto)
+        public async Task<ActionResult<ApiResponse>> AssignRole([FromBody] AssignRoleDto dto, CancellationToken ct)
         {
-            var response = new ApiResponse();
-            try
-            {
-                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-
-                if (string.IsNullOrEmpty(userId))
-                {
-                    response.StatusCode = HttpStatusCode.Unauthorized;
-                    response.ErrorMessage.Add("User not authenticated");
-                    return Unauthorized(response);
-                }
-
-                var result = await userService.AssignRoleAsync(dto);
-
-                if (!result)
-                {
-                    response.StatusCode = HttpStatusCode.BadRequest;
-                    response.ErrorMessage.Add("Role assignment failed.");
-                    return BadRequest(response);
-                }
-                response.IsSuccess = true;
-                response.StatusCode = HttpStatusCode.OK;
-                response.Result = $"Assigned role: {dto.Role}";
-                return Ok(response);
-            }
-            catch (Exception ex)
-            {
-                response.StatusCode = HttpStatusCode.InternalServerError;
-                response.ErrorMessage.Add(ex.Message);
-                return StatusCode(500, response);
-            }
+            var result = await userService.AssignRoleAsync(dto, ct);
+            return HandleResult(result, $"Assigned role: {dto.Role}");
         }
     }
 }

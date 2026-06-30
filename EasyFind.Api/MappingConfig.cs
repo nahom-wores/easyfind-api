@@ -7,7 +7,6 @@ namespace EasyFind.Api
         public MappingConfig()
         {
             // Auto Mapper configuration goes here
-            //CreateMap<ApplicationUser, AllUsersDto>().ReverseMap();
             
             
         }

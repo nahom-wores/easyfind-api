@@ -6,8 +6,16 @@ public static class LifetimeServicesCollectionExtensions
     public static IServiceCollection AddLifetimeServices(this
         IServiceCollection services)
     {
+        services.AddScoped<IUserService, UserService>();
         services.AddScoped<IFeedService, FeedService>();
         services.AddScoped<IBookmarkService, BookmarkService>();
+        services.AddScoped<IApplicationService, ApplicationService>();
+        services.AddScoped<ITokenService, TokenService>();
+        services.AddScoped<ISmsService, AfroSmsService>();
+        services.AddScoped<IImageService, ImageService>();
+        services.AddScoped<IRedisCacheService, RedisCacheService>();
+        services.AddScoped<IProfileService, ProfileService>();
+        
         services.AddHttpClient();
 
         //services.AddTransient<,>();

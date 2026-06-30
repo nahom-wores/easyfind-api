@@ -5,7 +5,7 @@ namespace EasyFind.Api.Services.IServices;
 
 public interface IBookmarkService
 {
-    Task<(bool ok, string message)> AddAsync(string userId, Guid listingId, CancellationToken ct = default);
-    Task<(bool ok, string message)> RemoveAsync(string userId, Guid listingId, CancellationToken ct = default);
+    Task<Result> AddAsync(string userId, Guid listingId, CancellationToken ct = default);
+    Task<Result> RemoveAsync(string userId, Guid listingId, CancellationToken ct = default);
     Task<PagedResult<ListingFeedItemDto>> GetUserBookmarksAsync(string userId, int page, int pageSize, CancellationToken ct = default);
 }

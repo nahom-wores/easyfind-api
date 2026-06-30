@@ -14,37 +14,18 @@ namespace EasyFind.Api.Controllers.v1;
 [ApiController]
 [ApiVersion("1.0")]
 [Authorize]
-public class FeedController(IFeedService feedService) : ControllerBase
+public class FeedController(IFeedService feedService) : ApiControllerBase
 {
-    /// <summary>
-    /// Personalized, ranked feed of jobs & scholarships for the current user.
-    /// GET /api/v1/feed
-    /// </summary>
-    ///
+    private string? UserId => User.FindFirstValue(ClaimTypes.NameIdentifier);
 
     [HttpGet]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<ActionResult<ApiResponse>> GetFeed([FromQuery]
-        FeedRequestDto request, CancellationToken ct)
+    public async Task<ActionResult<ApiResponse>> GetFeed([FromQuery] FeedRequestDto request, CancellationToken ct)
     {
-        var response = new ApiResponse();
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.IsNullOrEmpty(userId))
-        {
-            response.IsSuccess = false;
-            response.StatusCode = HttpStatusCode.Unauthorized;
-            response.ErrorMessage.Add("User not authenticated");
-            return Unauthorized(response);
-        }
-        // Guardrails on paging — never trust client input blindly
+        if (string.IsNullOrEmpty(UserId)) return Unauthorized();
         if (request.Page < 1) request.Page = 1;
         if (request.PageSize is < 1 or > 50) request.PageSize = 20;
-        var result = await feedService.GetPersonalizedFeedAsync(userId, request, ct);
 
-        response.IsSuccess = true;
-        response.StatusCode = HttpStatusCode.OK;
-        response.Result = result;
-        return Ok(response);
+        var result = await feedService.GetPersonalizedFeedAsync(UserId, request, ct);
+        return Ok(new ApiResponse { IsSuccess = true, Result = result });
     }
 }
