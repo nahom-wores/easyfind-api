@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Identity;
+﻿using EasyFind.Api.Models.Subscriptions;
+using Microsoft.AspNetCore.Identity;
 
 namespace EasyFind.Api.Models.Auth
 {
@@ -11,6 +12,8 @@ namespace EasyFind.Api.Models.Auth
         public string GoogleId { get; set; }          // Store Google user ID
         public string ProfilePictureUrl { get; set; } // Store Google profile photo
         public string LoginProvider { get; set; }     // "Google", "Phone", "telegram", "Apple ID"
+        
+        public SubscriptionTier SubscriptionTier { get; set; } = SubscriptionTier.Free;
         
         public bool IsSuspended { get; set; }
         public DateTimeOffset CreatedAt { get; set; }

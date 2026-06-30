@@ -1,6 +1,7 @@
 ﻿using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Enum;
 using EasyFind.Api.Models.Listings;
+using EasyFind.Api.Models.Subscriptions;
 using EasyFind.Api.Models.Users;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -19,12 +20,15 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<UserProfile> UserProfiles { get; set; }
     public DbSet<Bookmark> Bookmarks { get; set; }
     public DbSet<UserApplication> UserApplications { get; set; }
+    public DbSet<Subscription> Subscriptions { get; set; }
+    public DbSet<Payment> Payments { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.Entity<ApplicationUser>(entity =>
         {
             entity.HasIndex(e => e.UserName).IsUnique();
+            entity.Property(e => e.SubscriptionTier).HasConversion<int>();
         });
         modelBuilder.Entity<Listing>(entity =>
         {
@@ -120,6 +124,30 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
                 .WithMany()
                 .HasForeignKey(a => a.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+        
+        // Subscription
+        modelBuilder.Entity<Subscription>(entity =>
+        {
+            entity.HasKey(s => s.Id);
+            entity.Property(s => s.Tier).HasConversion<int>();
+            entity.Property(s => s.Status).HasConversion<int>();
+            entity.HasIndex(s => new { s.UserId, s.Status, s.ExpiresAt });
+            entity.HasOne(s => s.User).WithMany()
+                .HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+        
+        //Payment
+        modelBuilder.Entity<Payment>(entity =>
+        {
+            entity.HasKey(p => p.Id);
+            entity.Property(p => p.Tier).HasConversion<int>();
+            entity.Property(p => p.Status).HasConversion<int>();
+            entity.Property(p => p.Provider).HasConversion<int>();
+            entity.Property(p => p.TxRef).HasMaxLength(100).IsRequired();
+            entity.HasIndex(p => p.TxRef).IsUnique();   // the matching key — must be unique
+            entity.HasOne(p => p.User).WithMany()
+                .HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

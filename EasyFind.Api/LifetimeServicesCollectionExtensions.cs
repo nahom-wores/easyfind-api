@@ -15,8 +15,9 @@ public static class LifetimeServicesCollectionExtensions
         services.AddScoped<IImageService, ImageService>();
         services.AddScoped<IRedisCacheService, RedisCacheService>();
         services.AddScoped<IProfileService, ProfileService>();
-        
-        services.AddHttpClient();
+        services.AddScoped<IListingAdminService, ListingAdminService>();
+        services.AddHttpClient<IChapaClient, ChapaClient>();
+        //services.AddHttpClient();
 
         //services.AddTransient<,>();
         //services.AddSingleton<,>();

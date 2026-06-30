@@ -2,6 +2,7 @@
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.Listings;
 using EasyFind.Api.Models.Enum;
+using EasyFind.Api.Models.Users;
 using EasyFind.Api.Services.IServices;
 using Microsoft.EntityFrameworkCore;
 
@@ -36,10 +37,17 @@ public class FeedService(ApplicationDbContext db) : IFeedService
         var query = _db.Listings
             .AsNoTracking()
             .Where(l => l.IsActive);
-        
+        if (profile != null)
+        {
+            if (profile.SeekingType == SeekingType.Job)
+                query = query.Where(l => l.Type == ListingType.Job);
+            else if (profile.SeekingType == SeekingType.Scholarship)
+                query = query.Where(l => l.Type == ListingType.Scholarship);
+            // SeekingType.Both => no filter, show everything
+        }
         // 3. EXPLICIT filters (these remove rows) ───────────────────
-        if (request.Type.HasValue)
-            query = query.Where(l => l.Type == request.Type.Value);
+        // if (request.Type.HasValue)
+        //     query = query.Where(l => l.Type == request.Type.Value);
 
         if (!string.IsNullOrWhiteSpace(request.CountryCode))
             query = query.Where(l => l.CountryCode == request.CountryCode);
