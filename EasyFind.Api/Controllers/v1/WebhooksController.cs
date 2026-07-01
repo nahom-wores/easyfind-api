@@ -11,33 +11,33 @@ namespace EasyFind.Api.Controllers.v1;
 [ApiVersion("1.0")]
 public class WebhooksController(
     ISubscriptionService subscriptionService,
-    IConfiguration config,
+    IChapaWebhookVerifier webhookVerifier,
     ILogger<WebhooksController> logger) : ControllerBase
 {
     [HttpPost("chapa")]
-    [AllowAnonymous] // Chapa is not an authenticated user
+    [AllowAnonymous]
     public async Task<IActionResult> ChapaWebhook(CancellationToken ct)
     {
-        // 1. Read the raw body
         using var reader = new StreamReader(Request.Body);
         var rawBody = await reader.ReadToEndAsync(ct);
 
-        // 2. Verify the signature — confirms this is really from Chapa
-        var signature = Request.Headers["Chapa-Signature"].FirstOrDefault()
-                        ?? Request.Headers["x-chapa-signature"].FirstOrDefault();
+        var chapaSig = Request.Headers["chapa-signature"].FirstOrDefault();
+        var xChapaSig = Request.Headers["x-chapa-signature"].FirstOrDefault();
 
-        if (!VerifySignature(rawBody, signature))
+        if (!webhookVerifier.IsValid(rawBody, chapaSig, xChapaSig))
         {
-            logger.LogWarning("Chapa webhook with invalid signature.");
+            logger.LogWarning("Chapa webhook failed signature verification.");
             return Unauthorized();
         }
 
-        // 3. Extract tx_ref from the payload
-        string? txRef;
+        string? txRef, status, eventType;
         try
         {
             using var doc = JsonDocument.Parse(rawBody);
-            txRef = doc.RootElement.TryGetProperty("tx_ref", out var t) ? t.GetString() : null;
+            var root = doc.RootElement;
+            txRef = root.TryGetProperty("tx_ref", out var t) ? t.GetString() : null;
+            status = root.TryGetProperty("status", out var s) ? s.GetString() : null;
+            eventType = root.TryGetProperty("event", out var e) ? e.GetString() : null;
         }
         catch (Exception ex)
         {
@@ -48,36 +48,43 @@ public class WebhooksController(
         if (string.IsNullOrEmpty(txRef))
         {
             logger.LogWarning("Chapa webhook missing tx_ref.");
-            return BadRequest();
+            return Ok();
         }
 
-        // 4. Process (idempotent inside the service)
-        await subscriptionService.HandleWebhookAsync(txRef, ct);
+        if (eventType == "charge.success" || status == "success")
+            await subscriptionService.HandleWebhookAsync(txRef, ct);
+        else
+            logger.LogInformation("Chapa webhook {TxRef} status {Status}, no action.", txRef, status);
 
-        // Always 200 so Chapa stops retrying — our internal state is set correctly
         return Ok();
     }
-
-    private bool VerifySignature(string payload, string? signature)
+    
+    // GET callback — Chapa hits this right after payment with query params.
+    // Redundant with the webhook by design; HandleWebhookAsync is idempotent.
+    [HttpGet("chapa/callback")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ChapaCallback(
+        [FromQuery(Name = "trx_ref")] string? trxRef,
+        [FromQuery(Name = "tx_ref")] string? txRef,
+        [FromQuery] string? status,
+        CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(signature)) return false;
+        // Chapa's docs show "trx_ref" on the callback but "tx_ref" elsewhere — accept either
+        var reference = trxRef ?? txRef;
 
-        var secret = config["Chapa:WebhookSecret"];
-        if (string.IsNullOrEmpty(secret))
+        if (string.IsNullOrEmpty(reference))
         {
-            // If no webhook secret configured yet, log loudly.
-            logger.LogError("Chapa:WebhookSecret not configured — cannot verify webhook.");
-            return false;
+            logger.LogWarning("Chapa callback missing reference.");
+            return Ok();
         }
 
-        using var hmac = new System.Security.Cryptography.HMACSHA256(
-            System.Text.Encoding.UTF8.GetBytes(secret));
-        var hash = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(payload));
-        var computed = Convert.ToHexString(hash).ToLowerInvariant();
+        logger.LogInformation("Chapa callback for {Ref}, status {Status}", reference, status);
 
-        // Constant-time comparison to prevent timing attacks
-        return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-            System.Text.Encoding.UTF8.GetBytes(computed),
-            System.Text.Encoding.UTF8.GetBytes(signature.ToLowerInvariant()));
+        // Verify-in-service is the real gate; we don't trust this status blindly.
+        // Safe to call even if webhook already processed — idempotent.
+        await subscriptionService.HandleWebhookAsync(reference, ct);
+
+        return Ok();
     }
+    
 }

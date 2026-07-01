@@ -17,6 +17,7 @@ public static class LifetimeServicesCollectionExtensions
         services.AddScoped<IProfileService, ProfileService>();
         services.AddScoped<IListingAdminService, ListingAdminService>();
         services.AddHttpClient<IChapaClient, ChapaClient>();
+        services.AddHttpClient<IChapaWebhookVerifier, ChapaWebhookVerifier>();
         //services.AddHttpClient();
 
         //services.AddTransient<,>();
