@@ -7,19 +7,25 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Services;
 
-public class ApplicationService(ApplicationDbContext db) : IApplicationService
+public class ApplicationService(ApplicationDbContext db, SubscriptionGate gate) : IApplicationService
 {
-    private readonly ApplicationDbContext _db = db;
 
     public async Task<Result<ApplicationItemDto>> CreateAsync(
         string userId, CreateApplicationDto dto, CancellationToken ct = default)
     {
-        var listing = await _db.Listings
+        var tier = await db.Users.AsNoTracking()
+            .Where(u => u.Id == userId).Select(u => u.SubscriptionTier)
+            .FirstOrDefaultAsync(ct);
+
+        if (!gate.IsPaid(tier))
+            return Result<ApplicationItemDto>.Forbidden("Upgrade to a paid plan to track applications.");
+        
+        var listing = await db.Listings
             .FirstOrDefaultAsync(l => l.Id == dto.ListingId && l.IsActive, ct);
         if (listing == null)
             return Result<ApplicationItemDto>.NotFound("Listing not found.");
 
-        var already = await _db.UserApplications
+        var already = await db.UserApplications
             .AnyAsync(a => a.UserId == userId && a.ListingId == dto.ListingId, ct);
         if (already)
             return Result<ApplicationItemDto>.Conflict("Already in your tracker.");
@@ -33,10 +39,10 @@ public class ApplicationService(ApplicationDbContext db) : IApplicationService
             AppliedAt = dto.Status >= ApplicationTrackStatus.Applied ? DateTimeOffset.UtcNow : null,
         };
 
-        _db.UserApplications.Add(entry);
+        db.UserApplications.Add(entry);
         try
         {
-            await _db.SaveChangesAsync(ct);
+            await db.SaveChangesAsync(ct);
         }
         catch (DbUpdateException)
         {
@@ -50,7 +56,7 @@ public class ApplicationService(ApplicationDbContext db) : IApplicationService
     public async Task<Result> UpdateAsync(
         string userId, Guid applicationId, UpdateApplicationDto dto, CancellationToken ct = default)
     {
-        var entry = await _db.UserApplications
+        var entry = await db.UserApplications
             .FirstOrDefaultAsync(a => a.Id == applicationId && a.UserId == userId, ct);
         if (entry == null) return Result.NotFound("Application not found.");
 
@@ -61,26 +67,26 @@ public class ApplicationService(ApplicationDbContext db) : IApplicationService
         entry.Notes = dto.Notes;
         entry.UpdatedAt = DateTimeOffset.UtcNow;
 
-        await _db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(ct);
         return Result.Success();
     }
 
     public async Task<Result> DeleteAsync(
         string userId, Guid applicationId, CancellationToken ct = default)
     {
-        var entry = await _db.UserApplications
+        var entry = await db.UserApplications
             .FirstOrDefaultAsync(a => a.Id == applicationId && a.UserId == userId, ct);
         if (entry == null) return Result.NotFound("Application not found.");
 
-        _db.UserApplications.Remove(entry);
-        await _db.SaveChangesAsync(ct);
+        db.UserApplications.Remove(entry);
+        await db.SaveChangesAsync(ct);
         return Result.Success();
     }
 
     public async Task<PagedResult<ApplicationItemDto>> GetUserApplicationsAsync(string userId,
         int page, int pageSize, CancellationToken ct = default)
     {
-        var query = _db.UserApplications
+        var query = db.UserApplications
             .AsNoTracking()
             .Where(a => a.UserId == userId)
             .OrderByDescending(a => a.UpdatedAt)

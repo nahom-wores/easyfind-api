@@ -8,9 +8,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Services;
 
-public class FeedService(ApplicationDbContext db) : IFeedService
+public class FeedService(ApplicationDbContext db, SubscriptionGate gate) : IFeedService
 {
-    private readonly ApplicationDbContext _db = db;
     
     // Scoring weights — central, tunable. Change here, whole feed re-ranks.
     private const int CountryWeight  = 50;
@@ -21,9 +20,18 @@ public class FeedService(ApplicationDbContext db) : IFeedService
     public async Task<PagedResult<ListingFeedItemDto>> GetPersonalizedFeedAsync(string userId,
         FeedRequestDto request, CancellationToken ct = default)
     {
+        
+        var tier = await db.Users
+            .AsNoTracking()
+            .Where(u => u.Id == userId)
+            .Select(u => u.SubscriptionTier)
+            .FirstOrDefaultAsync(ct);
+
+        var resultCap = gate.ResultCapFor(tier);   // null = unlimited, else the free cap
+        
         // 1. Load the user's profile (small, single row). We pull the preference
         //    values into locals so EF can embed them as query parameters.
-        var profile = await _db.UserProfiles
+        var profile = await db.UserProfiles
             .AsNoTracking()
             .FirstOrDefaultAsync(p => p.UserId == userId, ct);
             
@@ -34,7 +42,7 @@ public class FeedService(ApplicationDbContext db) : IFeedService
         
         // 2. Start from listings. Query filter already excludes soft-deleted.
         //    Stay in IQueryable — nothing materializes yet.
-        var query = _db.Listings
+        var query = db.Listings
             .AsNoTracking()
             .Where(l => l.IsActive);
         if (profile != null)
@@ -61,8 +69,10 @@ public class FeedService(ApplicationDbContext db) : IFeedService
         }
         
         // 4. Count AFTER filters, BEFORE paging (for pagination metadata)
-        var totalCount = await query.CountAsync(ct);
-
+        var totalMatching = await query.CountAsync(ct);
+        var totalCount = resultCap.HasValue
+            ? Math.Min(totalMatching, resultCap.Value)
+            : totalMatching;
         // 5. SCORING + projection. Profile prefs only ADD to score.
         //    EF translates this into SQL CASE expressions.
         var scored = query.Select(l => new
@@ -79,24 +89,37 @@ public class FeedService(ApplicationDbContext db) : IFeedService
                 (l.IsFeatured ? FeaturedWeight : 0)
         });
         // 6. Order by score, then recency. Page. THIS is where SQL runs.
-        var pageItems = await scored
+        var orderedScored = scored
             .OrderByDescending(x => x.Score)
-            .ThenByDescending(x => x.Listing.CreatedAt)
-            .Skip((request.Page - 1) * request.PageSize)
-            .Take(request.PageSize)
-            .ToListAsync(ct);
+            .ThenByDescending(x => x.Listing.CreatedAt);
+
+        // Free users: their universe is only the top N. Clamp paging into it.
+        // A free user paging past the cap gets an empty page — correct.
+        int skip = (request.Page - 1) * request.PageSize;
+        int take = request.PageSize;
+
+        if (resultCap.HasValue)
+        {
+            // How many results remain within the cap from this skip point?
+            int remainingWithinCap = Math.Max(0, resultCap.Value - skip);
+            take = Math.Min(take, remainingWithinCap);
+        }
+
+        var pageItems = take == 0
+            ? []
+            : await orderedScored.Skip(skip).Take(take).ToListAsync(ct);
         
         // 7. Enrich with this user's bookmark + application state.
         //    Only for the listings on THIS page — small, targeted queries.
         var pageListingIds = pageItems.Select(x => x.Listing.Id).ToList();
 
-        var bookmarkedIds = await _db.Bookmarks
+        var bookmarkedIds = await db.Bookmarks
             .AsNoTracking()
             .Where(b => b.UserId == userId && pageListingIds.Contains(b.ListingId))
             .Select(b => b.ListingId)
             .ToListAsync(ct);
         
-        var appStatuses = await _db.UserApplications
+        var appStatuses = await db.UserApplications
             .AsNoTracking()
             .Where(a => a.UserId == userId && pageListingIds.Contains(a.ListingId))
             .Select(a => new { a.ListingId, a.Status })

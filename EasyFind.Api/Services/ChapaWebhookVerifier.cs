@@ -9,7 +9,7 @@ public class ChapaWebhookVerifier(IConfiguration config, ILogger<ChapaWebhookVer
 {
     public bool IsValid(string payload, string chapaSignature, string xChapaSignature)
     {
-        var secretKey = config["Chapa:SecretKey"];
+        var secretKey = config["Chapa:WebhookSecret"];
         if (string.IsNullOrEmpty(secretKey))
         {
             logger.LogError("Chapa:SecretKey not configured — cannot verify webhook.");

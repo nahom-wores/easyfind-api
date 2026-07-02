@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Text;
+using System.Text.Json;
 using Asp.Versioning;
 using EasyFind.Api.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
@@ -18,45 +19,57 @@ public class WebhooksController(
     [AllowAnonymous]
     public async Task<IActionResult> ChapaWebhook(CancellationToken ct)
     {
-        using var reader = new StreamReader(Request.Body);
-        var rawBody = await reader.ReadToEndAsync(ct);
-
-        var chapaSig = Request.Headers["chapa-signature"].FirstOrDefault();
-        var xChapaSig = Request.Headers["x-chapa-signature"].FirstOrDefault();
-
-        if (!webhookVerifier.IsValid(rawBody, chapaSig, xChapaSig))
-        {
-            logger.LogWarning("Chapa webhook failed signature verification.");
-            return Unauthorized();
-        }
-
-        string? txRef, status, eventType;
         try
         {
-            using var doc = JsonDocument.Parse(rawBody);
-            var root = doc.RootElement;
-            txRef = root.TryGetProperty("tx_ref", out var t) ? t.GetString() : null;
-            status = root.TryGetProperty("status", out var s) ? s.GetString() : null;
-            eventType = root.TryGetProperty("event", out var e) ? e.GetString() : null;
+            string rawBody;
+            using (var reader = new StreamReader(Request.Body, Encoding.UTF8))
+            {
+                rawBody = await reader.ReadToEndAsync(ct);
+            }
+            logger.LogInformation(rawBody);
+            var chapaSig = Request.Headers["chapa-signature"].FirstOrDefault();
+            var xChapaSig = Request.Headers["x-chapa-signature"].FirstOrDefault();
+
+            if (!webhookVerifier.IsValid(rawBody, chapaSig, xChapaSig))
+            {
+                logger.LogWarning("Chapa webhook failed signature verification.");
+                return Unauthorized();
+            }
+
+            string? txRef, status, eventType;
+            try
+            {
+                using var doc = JsonDocument.Parse(rawBody);
+                var root = doc.RootElement;
+                txRef = root.TryGetProperty("tx_ref", out var t) ? t.GetString() : null;
+                status = root.TryGetProperty("status", out var s) ? s.GetString() : null;
+                eventType = root.TryGetProperty("event", out var e) ? e.GetString() : null;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Could not parse Chapa webhook body.");
+                return BadRequest();
+            }
+
+            if (string.IsNullOrEmpty(txRef))
+            {
+                logger.LogWarning("Chapa webhook missing tx_ref.");
+                return Ok();
+            }
+
+            if (eventType == "charge.success" || status == "success")
+                await subscriptionService.HandleWebhookAsync(txRef, ct);
+            else
+                logger.LogInformation("Chapa webhook {TxRef} status {Status}, no action.", txRef, status);
+
+            return Ok();
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Could not parse Chapa webhook body.");
-            return BadRequest();
+            logger.LogError(ex, "Webhook blew up: {Message}", ex.Message);
+            throw;
         }
-
-        if (string.IsNullOrEmpty(txRef))
-        {
-            logger.LogWarning("Chapa webhook missing tx_ref.");
-            return Ok();
-        }
-
-        if (eventType == "charge.success" || status == "success")
-            await subscriptionService.HandleWebhookAsync(txRef, ct);
-        else
-            logger.LogInformation("Chapa webhook {TxRef} status {Status}, no action.", txRef, status);
-
-        return Ok();
+       
     }
     
     // GET callback — Chapa hits this right after payment with query params.

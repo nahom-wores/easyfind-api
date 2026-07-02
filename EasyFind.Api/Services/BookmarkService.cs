@@ -8,27 +8,33 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Services;
 
-public class BookmarkService(ApplicationDbContext db) : IBookmarkService
+public class BookmarkService(ApplicationDbContext db, SubscriptionGate gate) : IBookmarkService
 {
-    private readonly ApplicationDbContext _db = db;
-
+    
     public async Task<Result> AddAsync(string userId, Guid listingId, CancellationToken ct = default)
     {
+        var tier = await db.Users.AsNoTracking()
+            .Where(u => u.Id == userId).Select(u => u.SubscriptionTier)
+            .FirstOrDefaultAsync(ct);
+
+        if (!gate.IsPaid(tier))
+            return Result.Forbidden("Upgrade to a paid plan to save listings.");
+        
         // Verify the listing exists and is active (query filter excludes soft-deleted)
-        var exists = await _db.Listings
+        var exists = await db.Listings
             .AnyAsync(l => l.Id == listingId && l.IsActive, ct);
         if (!exists) return Result.NotFound("Listing not found");
         
         // The unique index (UserId, ListingId) is our real guard against duplicates.
         // We check first for a friendly message, but catch the race below.
-        var already = await _db.Bookmarks
+        var already = await db.Bookmarks
             .AnyAsync(b => b.UserId == userId && b.ListingId == listingId, ct);
         if (already) return Result.Success();
             
-        _db.Bookmarks.Add(new Bookmark { UserId = userId, ListingId = listingId });
+        db.Bookmarks.Add(new Bookmark { UserId = userId, ListingId = listingId });
         try
         {
-            await _db.SaveChangesAsync(ct);
+            await db.SaveChangesAsync(ct);
         }
         catch (DbUpdateException)
         {
@@ -41,13 +47,13 @@ public class BookmarkService(ApplicationDbContext db) : IBookmarkService
 
     public async Task<Result> RemoveAsync(string userId, Guid listingId, CancellationToken ct = default)
     {
-        var bookmark = await _db.Bookmarks
+        var bookmark = await db.Bookmarks
             .FirstOrDefaultAsync(b => b.UserId == userId && b.ListingId == listingId, ct);
 
         if (bookmark == null) return Result.NotFound("Bookmark not found");
 
-        _db.Bookmarks.Remove(bookmark);
-        await _db.SaveChangesAsync(ct);
+        db.Bookmarks.Remove(bookmark);
+        await db.SaveChangesAsync(ct);
         return Result.Success();
     }
 
@@ -55,7 +61,7 @@ public class BookmarkService(ApplicationDbContext db) : IBookmarkService
         int page, int pageSize, CancellationToken ct = default)
     {
         // Bookmarks joined to their listings, newest bookmark first
-        var query = _db.Bookmarks
+        var query = db.Bookmarks
             .AsNoTracking()
             .Where(b => b.UserId == userId)
             .OrderByDescending(b => b.CreatedAt)
@@ -70,7 +76,7 @@ public class BookmarkService(ApplicationDbContext db) : IBookmarkService
 
         // Application statuses for these listings (same N+1-avoidance pattern as the feed)
         var ids = listings.Select(l => l.Id).ToList();
-        var appStatuses = await _db.UserApplications
+        var appStatuses = await db.UserApplications
             .AsNoTracking()
             .Where(a => a.UserId == userId && ids.Contains(a.ListingId))
             .Select(a => new { a.ListingId, a.Status })

@@ -2,10 +2,12 @@
 using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.Subscriptions;
+using EasyFind.Api.Models.Options;
 using EasyFind.Api.Models.Subscriptions;
 using EasyFind.Api.Services.IServices;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace EasyFind.Api.Services;
 
@@ -13,9 +15,11 @@ public class SubscriptionService(
     ApplicationDbContext db,
     IChapaClient chapa,
     UserManager<ApplicationUser> userManager,
-    IConfiguration config,
+    IOptions<SubscriptionOptions> subOptions,
     ILogger<SubscriptionService> logger) : ISubscriptionService
 {
+
+    private readonly SubscriptionOptions _opts = subOptions.Value;
     public async Task<Result<CheckoutResponseDto>> InitiateAsync(string userId, SubscriptionTier tier,
         CancellationToken ct = default)
     {
@@ -27,8 +31,8 @@ public class SubscriptionService(
 
         var amount = tier switch
         {
-            SubscriptionTier.Basic => config.GetValue<int>("Subscription:BasicPriceEtb"),
-            SubscriptionTier.Premium => config.GetValue<int>("Subscription:PremiumPriceEtb"),
+            SubscriptionTier.Basic => _opts.BasicPriceEtb,
+            SubscriptionTier.Premium => _opts.PremiumPriceEtb,
             _ => 0
         };
         if (amount <= 0)
@@ -60,8 +64,8 @@ public class SubscriptionService(
             FirstName = user.FirstName,
             LastName = user.LastName,
             TxRef = txRef,
-            CallbackUrl = config["Subscription:CallbackUrl"] ?? "",
-            ReturnUrl = config["Subscription:ReturnUrl"] ?? "",
+            CallbackUrl = _opts.CallbackUrl ?? "",
+            ReturnUrl = _opts.ReturnUrl ?? "",
         };
 
         var checkoutUrl = await chapa.InitializePaymentAsync(initRequest, ct);
@@ -83,6 +87,7 @@ public class SubscriptionService(
     }
 
     public async Task<Result> HandleWebhookAsync(string txRef, CancellationToken ct = default)
+    
     {
         // 1. Find the payment by tx_ref
         var payment = await db.Payments.FirstOrDefaultAsync(p => p.TxRef == txRef, ct);
@@ -141,7 +146,7 @@ public class SubscriptionService(
             }
 
             // Create or extend the subscription (stacking logic)
-            var durationDays = config.GetValue<int>("Subscription:DurationDays");
+            var durationDays = _opts.DurationDays;
             var now = DateTimeOffset.UtcNow;
 
             var existing = await db.Subscriptions

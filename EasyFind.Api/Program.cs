@@ -5,6 +5,7 @@ using Asp.Versioning;
 using EasyFind.Api;
 using EasyFind.Api.Data;
 using EasyFind.Api.Models.Auth;
+using EasyFind.Api.Models.Options;
 using HealthChecks.UI.Client;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -203,12 +204,20 @@ builder.Services.AddOpenApi(options =>
 {
     options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
 });
-
+// subscription options 
+builder.Services
+    .AddOptions<SubscriptionOptions>()
+    .Bind(builder.Configuration.GetSection(SubscriptionOptions.SectionName))
+    .Validate(o => o.BasicPriceEtb > 0 && o.PremiumPriceEtb > 0,
+        "Subscription prices must be greater than zero.")
+    .Validate(o => o.DurationDays > 0,
+        "Subscription duration must be positive.")
+    .ValidateOnStart();
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
 
-if (app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
 {
     app.MapOpenApi();
     app.MapScalarApiReference(options =>
