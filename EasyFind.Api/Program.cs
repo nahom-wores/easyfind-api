@@ -6,6 +6,9 @@ using EasyFind.Api;
 using EasyFind.Api.Data;
 using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Options;
+using EasyFind.Api.Services.Jobs;
+using Hangfire;
+using Hangfire.PostgreSql;
 using HealthChecks.UI.Client;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -204,6 +207,18 @@ builder.Services.AddOpenApi(options =>
 {
     options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
 });
+
+#region hangfire background service
+builder.Services.AddHangfire(config => config
+    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+    .UseSimpleAssemblyNameTypeSerializer()
+    .UseRecommendedSerializerSettings()
+    .UsePostgreSqlStorage(options =>
+        options.UseNpgsqlConnection(builder.Configuration
+            .GetConnectionString("DefaultConnection"))));
+builder.Services.AddHangfireServer();
+#endregion
+
 // subscription options 
 builder.Services
     .AddOptions<SubscriptionOptions>()
@@ -213,9 +228,16 @@ builder.Services
     .Validate(o => o.DurationDays > 0,
         "Subscription duration must be positive.")
     .ValidateOnStart();
+
+//-------------------------request pipeline-----------------------------//
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
+app.UseHangfireDashboard("/hangfire");
+RecurringJob.AddOrUpdate<SubscriptionExpiryJob>(
+    "subscription-expiry",                    // unique job id
+    job => job.RunAsync(),                    // what to call
+    Cron.Daily(2));                           // when: every day at 02:00 UTC
 
 if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
 {

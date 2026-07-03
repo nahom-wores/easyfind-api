@@ -1,5 +1,6 @@
 ﻿using EasyFind.Api.Services;
 using EasyFind.Api.Services.IServices;
+using EasyFind.Api.Services.Jobs;
 
 public static class LifetimeServicesCollectionExtensions
 {
@@ -20,6 +21,7 @@ public static class LifetimeServicesCollectionExtensions
         services.AddScoped<IChapaWebhookVerifier, ChapaWebhookVerifier>();
         services.AddScoped<ISubscriptionService, SubscriptionService>();
         services.AddScoped<SubscriptionGate>();
+        services.AddScoped<SubscriptionExpiryJob>();
         //services.AddHttpClient();
 
         //services.AddTransient<,>();
