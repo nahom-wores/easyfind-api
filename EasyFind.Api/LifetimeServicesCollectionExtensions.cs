@@ -22,6 +22,8 @@ public static class LifetimeServicesCollectionExtensions
         services.AddScoped<ISubscriptionService, SubscriptionService>();
         services.AddScoped<SubscriptionGate>();
         services.AddScoped<SubscriptionExpiryJob>();
+        services.AddScoped<IStorageService, LocalStorageService>();
+        services.AddScoped<IDocumentService, DocumentService>();
         //services.AddHttpClient();
 
         //services.AddTransient<,>();

@@ -228,7 +228,8 @@ builder.Services
     .Validate(o => o.DurationDays > 0,
         "Subscription duration must be positive.")
     .ValidateOnStart();
-
+builder.Services.Configure<DocumentUploadOptions>(
+    builder.Configuration.GetSection(DocumentUploadOptions.SectionName));
 //-------------------------request pipeline-----------------------------//
 var app = builder.Build();
 

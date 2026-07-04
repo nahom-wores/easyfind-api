@@ -22,6 +22,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<UserApplication> UserApplications { get; set; }
     public DbSet<Subscription> Subscriptions { get; set; }
     public DbSet<Payment> Payments { get; set; }
+    public DbSet<UserDocument> UserDocuments { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -148,6 +149,17 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(p => p.TxRef).IsUnique();   // the matching key — must be unique
             entity.HasOne(p => p.User).WithMany()
                 .HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+        // UserDoc
+        modelBuilder.Entity<UserDocument>(entity =>
+        {
+            entity.HasKey(d => d.Id);
+            entity.Property(d => d.Type).HasConversion<int>();
+            entity.Property(d => d.FileName).HasMaxLength(255);
+            entity.Property(d => d.StorageKey).HasMaxLength(500);
+            entity.HasIndex(d => d.UserId);   // fetch all of a user's docs
+            entity.HasOne(d => d.User).WithMany()
+                .HasForeignKey(d => d.UserId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }
