@@ -58,7 +58,7 @@ var localizationOptions = new RequestLocalizationOptions()
     .SetDefaultCulture(supportedCultures[0])
     .AddSupportedCultures(supportedCultures)
     .AddSupportedUICultures(supportedCultures);
-// remove server header so that no one knows what tech stack you are using its for security
+
 builder.WebHost.UseKestrel(option =>
 {
     option.AddServerHeader = false;
