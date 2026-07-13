@@ -18,6 +18,7 @@ public class OnboardingDto
 
     public EducationLevel EducationLevel { get; set; }
     public short WorkExperienceYears { get; set; }
+    public ExperienceRange ExperienceRange { get; set; }
     public string? EnglishLevel { get; set; }
     public DateOnly? DateOfBirth { get; set; }
     public Sex? Sex { get; set; }
@@ -34,6 +35,7 @@ public class ProfileResponseDto
     public int? TargetDegreeLevel { get; set; }
     public string EducationLevel { get; set; } = string.Empty;
     public short WorkExperienceYears { get; set; }
+    public ExperienceRange ExperienceRange { get; set; }
     public string? EnglishLevel { get; set; }
     public string? CvFileUrl { get; set; }
     public bool HasProfile { get; set; }

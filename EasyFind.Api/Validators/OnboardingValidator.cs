@@ -8,13 +8,7 @@ public class OnboardingValidator : AbstractValidator<OnboardingDto>
 {
     public OnboardingValidator()
     {
-        RuleFor(x => x.FirstName)
-            .NotEmpty().WithMessage("First name is required.")
-            .MaximumLength(100);
-
-        RuleFor(x => x.LastName)
-            .NotEmpty().WithMessage("Last name is required.")
-            .MaximumLength(100);
+        
 
         RuleFor(x => x.TargetCountries)
             .NotEmpty().WithMessage("Select at least one target country.");

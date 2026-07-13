@@ -1,4 +1,5 @@
-﻿using EasyFind.Api.Models.Auth;
+﻿using EasyFind.Api.Models.Admin;
+using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Enum;
 using EasyFind.Api.Models.Listings;
 using EasyFind.Api.Models.Subscriptions;
@@ -23,6 +24,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Subscription> Subscriptions { get; set; }
     public DbSet<Payment> Payments { get; set; }
     public DbSet<UserDocument> UserDocuments { get; set; }
+    public DbSet<AdminAction> AdminActions { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -65,7 +67,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(p => p.UserId).IsUnique();
-
+            entity.Property(p => p.ExperienceRange).HasConversion<int>();
             entity.Property(p => p.SeekingType).HasConversion<int>();
             entity.Property(p => p.EducationLevel).HasConversion<int>();
             entity.Property(p => p.TargetDegreeLevel).HasConversion<int>();
@@ -160,6 +162,20 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(d => d.UserId);   // fetch all of a user's docs
             entity.HasOne(d => d.User).WithMany()
                 .HasForeignKey(d => d.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+        
+        // Admin
+        modelBuilder.Entity<AdminAction>(entity =>
+        {
+            entity.HasKey(a => a.Id);
+            entity.Property(a => a.ActionType).HasConversion<int>();
+            entity.Property(a => a.Details).HasMaxLength(1000);
+            entity.Property(a => a.Reason).HasMaxLength(500);
+            entity.HasIndex(a => a.TargetUserId);
+            entity.HasIndex(a => a.AdminUserId);
+            entity.HasIndex(a => a.CreatedAt);
+            entity.HasOne(a => a.AdminUser).WithMany()
+                .HasForeignKey(a => a.AdminUserId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

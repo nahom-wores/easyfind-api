@@ -111,7 +111,7 @@ builder.Services.AddAuthentication(x =>
 })
     .AddJwtBearer(x =>
     {
-        x.RequireHttpsMetadata = true;
+        x.RequireHttpsMetadata = false;
         x.SaveToken = true;
         x.TokenValidationParameters = new TokenValidationParameters
         {
@@ -188,10 +188,15 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.WithOrigins("http://localhost:8080")
+        
+        // policy.WithOrigins("http://localhost:8080")
+        //     .AllowAnyMethod()
+        //     .AllowAnyHeader()
+        //     .AllowCredentials();
+        
+        policy.AllowAnyOrigin()
             .AllowAnyMethod()
-            .AllowAnyHeader()
-            .AllowCredentials();
+            .AllowAnyHeader();
     });
 });
 #endregion
@@ -223,7 +228,7 @@ builder.Services.AddHangfireServer();
 builder.Services
     .AddOptions<SubscriptionOptions>()
     .Bind(builder.Configuration.GetSection(SubscriptionOptions.SectionName))
-    .Validate(o => o.BasicPriceEtb > 0 && o.PremiumPriceEtb > 0,
+    .Validate(o => o.ProPriceEtb > 0,
         "Subscription prices must be greater than zero.")
     .Validate(o => o.DurationDays > 0,
         "Subscription duration must be positive.")
@@ -269,7 +274,8 @@ using (var scope = app.Services.CreateScope())
             await roleManager.CreateAsync(new IdentityRole(role));
     }
 }
-app.UseHttpsRedirection();
+if (app.Environment.IsDevelopment())
+    app.UseHttpsRedirection();
 app.UseRateLimiter();
 app.UseCors("AllowAll");
 app.UseResponseCaching();

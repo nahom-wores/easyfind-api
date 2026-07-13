@@ -31,8 +31,7 @@ public class SubscriptionService(
 
         var amount = tier switch
         {
-            SubscriptionTier.Basic => _opts.BasicPriceEtb,
-            SubscriptionTier.Premium => _opts.PremiumPriceEtb,
+            SubscriptionTier.Pro => _opts.ProPriceEtb,
             _ => 0
         };
         if (amount <= 0)

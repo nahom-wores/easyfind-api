@@ -44,6 +44,7 @@ public class ProfileService(ApplicationDbContext db,
         profile.TargetDegreeLevel = dto.TargetDegreeLevel;
         profile.EducationLevel = dto.EducationLevel;
         profile.WorkExperienceYears = dto.WorkExperienceYears;
+        profile.ExperienceRange = dto.ExperienceRange;
         profile.EnglishLevel = dto.EnglishLevel;
         profile.UpdatedAt = DateTimeOffset.UtcNow;
         profile.DateOfBirth = dto.DateOfBirth;
@@ -84,6 +85,7 @@ public class ProfileService(ApplicationDbContext db,
         TargetDegreeLevel = (int?)p.TargetDegreeLevel,
         EducationLevel = p.EducationLevel.ToString(),
         WorkExperienceYears = p.WorkExperienceYears,
+        ExperienceRange = p.ExperienceRange,
         EnglishLevel = p.EnglishLevel,
         CvFileUrl = p.CvFileUrl,
         HasProfile = true,

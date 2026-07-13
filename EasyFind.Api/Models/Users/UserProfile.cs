@@ -29,7 +29,7 @@ public class UserProfile
     // ── Who the user is ─────────────────────────────
     public EducationLevel EducationLevel { get; set; }
     public short WorkExperienceYears { get; set; }
-
+    public ExperienceRange ExperienceRange { get; set; }
     [MaxLength(10)]
     public string? EnglishLevel { get; set; }      // CEFR: "B2", "C1"
     
@@ -65,13 +65,19 @@ public enum EducationLevel
 public enum PassportStatus
 {
     HasValid = 0,
-    Expired = 1,
-    Applying = 2,
-    None = 3,
+    None = 1,
 }
 public enum Sex
 {
     Male = 0,
     Female = 1,
     PreferNotToSay = 99
+}
+
+public enum ExperienceRange
+{
+    LessThan3 = 0,
+    ThreeToFive = 1,
+    FiveToTen = 2,
+    TenPlus = 3
 }

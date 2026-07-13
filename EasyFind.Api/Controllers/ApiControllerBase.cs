@@ -3,7 +3,7 @@ using System.Security.Claims;
 using EasyFind.Api.Models.Dto.Common;
 using Microsoft.AspNetCore.Mvc;
 
-namespace EasyFind.Api.Controllers.v1;
+namespace EasyFind.Api.Controllers;
 
 
 [ApiController]
