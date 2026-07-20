@@ -37,11 +37,13 @@ public class Listing
 
     // ── Job-specific (null when Type = Scholarship) ──
     public JobCategory? JobCategory { get; set; }
-    public int? SalaryMin { get; set; }            // USD/year
+    public int? SalaryMin { get; set; }         
     public int? SalaryMax { get; set; }
+    public SalaryPeriod? SalaryPeriod { get; set; }
     public EmploymentType? EmploymentType { get; set; } // part-time | full-time
     public int? MinExperienceYears { get; set; }
-
+    public Currency? SalaryCurrency { get; set; }
+    
     // ── Scholarship-specific (null when Type = Job) ─
     public ScholarshipField? ScholarshipField { get; set; }
     public DegreeLevel? DegreeLevel { get; set; }

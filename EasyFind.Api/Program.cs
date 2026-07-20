@@ -29,8 +29,8 @@ var builder = WebApplication.CreateBuilder(args);
 var npgSqlConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
 builder.Services.AddHealthChecks()
-    .AddRedis(redisConnectionString, name: "redis")
     .AddNpgSql(npgSqlConnectionString, name: "postgres");
+    //.AddRedis(redisConnectionString, name: "redis");
 
 #region Versioning
 
@@ -263,6 +263,11 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 {
     ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse 
 });
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await db.Database.MigrateAsync();
+}
 // ── Seed Identity roles ──────────────────────────────
 using (var scope = app.Services.CreateScope())
 {

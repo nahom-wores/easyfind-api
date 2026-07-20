@@ -192,5 +192,8 @@ public class ListingAdminService(ApplicationDbContext db, IRedisCacheService cac
         FundingType = (int?)l.FundingType,
         CreatedAt = l.CreatedAt,
         UpdatedAt = l.UpdatedAt,
+        SalaryPeriod = (int?)l.SalaryPeriod,
+        SalaryCurrency = (int?)l.SalaryCurrency,
+        
     };
 }

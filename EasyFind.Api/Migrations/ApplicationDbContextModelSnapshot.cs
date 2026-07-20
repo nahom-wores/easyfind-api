@@ -23,6 +23,43 @@ namespace EasyFind.Api.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("EasyFind.Api.Models.Admin.AdminAction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("ActionType")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("AdminUserId")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Details")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("TargetUserId")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AdminUserId");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("TargetUserId");
+
+                    b.ToTable("AdminActions");
+                });
+
             modelBuilder.Entity("EasyFind.Api.Models.Auth.ApplicationUser", b =>
                 {
                     b.Property<string>("Id")
@@ -223,10 +260,16 @@ namespace EasyFind.Api.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
 
+                    b.Property<int?>("SalaryCurrency")
+                        .HasColumnType("integer");
+
                     b.Property<int?>("SalaryMax")
                         .HasColumnType("integer");
 
                     b.Property<int?>("SalaryMin")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("SalaryPeriod")
                         .HasColumnType("integer");
 
                     b.Property<int?>("ScholarshipField")
@@ -616,6 +659,16 @@ namespace EasyFind.Api.Migrations
                     b.HasKey("UserId", "LoginProvider", "Name");
 
                     b.ToTable("AspNetUserTokens", (string)null);
+                });
+
+            modelBuilder.Entity("EasyFind.Api.Models.Admin.AdminAction", b =>
+                {
+                    b.HasOne("EasyFind.Api.Models.Auth.ApplicationUser", "AdminUser")
+                        .WithMany()
+                        .HasForeignKey("AdminUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("AdminUser");
                 });
 
             modelBuilder.Entity("EasyFind.Api.Models.Listings.Bookmark", b =>

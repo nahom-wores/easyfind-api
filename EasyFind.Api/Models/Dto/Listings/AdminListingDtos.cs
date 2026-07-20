@@ -26,6 +26,8 @@ public class AdminListingDto
     public int? ScholarshipField { get; set; }
     public int? DegreeLevel { get; set; }
     public int? FundingType { get; set; }
+    public int? SalaryPeriod { get; set; }
+    public int? SalaryCurrency { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }
@@ -49,7 +51,8 @@ public class CreateListingDto
     public int? SalaryMax { get; set; }
     public EmploymentType? EmploymentType { get; set; }
     public int? MinExperienceYears { get; set; }
-
+    public SalaryPeriod? SalaryPeriod { get; set; }
+    public Currency? SalaryCurrency { get; set; }
     // Scholarship-only
     public ScholarshipField? ScholarshipField { get; set; }
     public DegreeLevel? DegreeLevel { get; set; }

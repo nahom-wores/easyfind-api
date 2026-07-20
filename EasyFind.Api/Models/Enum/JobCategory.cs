@@ -78,3 +78,21 @@ public enum EmploymentType
     Temporary = 3,
     Internship = 4
 }
+public enum SalaryPeriod
+{
+    Yearly = 0,
+    Monthly = 1,
+    Hourly = 2
+}
+
+public enum Currency
+{
+    USD = 0,
+    EUR = 1,
+    GBP = 2,
+    ETB = 3,
+    AED = 4,
+    QAR = 5,
+    SAR = 6,
+    CAD = 7
+}

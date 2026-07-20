@@ -44,7 +44,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(l => l.ScholarshipField).HasConversion<int>();
             entity.Property(l => l.DegreeLevel).HasConversion<int>();
             entity.Property(l => l.FundingType).HasConversion<int>();
-
+            entity.Property(l => l.SalaryPeriod).HasConversion<int>();
+            entity.Property(l => l.SalaryCurrency).HasConversion<int>();
             // Soft-delete filter: every query auto-excludes deleted rows
             entity.HasQueryFilter(l => l.DeletedAt == null);
 
