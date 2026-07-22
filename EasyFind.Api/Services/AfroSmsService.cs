@@ -30,7 +30,7 @@ public class AfroSmsService : ISmsService
 
     public async Task<bool> SendOTPAsync(string toPhoneNumber, string otpCode)
     {
-        var message = $"Your MedaHub verification code is: {otpCode}. Valid for 5 minutes.";
+        var message = $"Your Yisru verification code is: {otpCode}. Valid for 5 minutes.";
         return await SendAsync(toPhoneNumber, message);
     }
 
