@@ -16,7 +16,7 @@ namespace EasyFind.Api.Controllers.v1;
 public class AdminUsersController(IAdminSubscriptionService adminSubService, IAdminUserService adminUserService) : ApiControllerBase
 {
     private string? AdminId => User.FindFirstValue(ClaimTypes.NameIdentifier);
-
+    [Authorize(Roles = "SuperAdmin")]
     [HttpPost("{userId}/subscription/grant")]
     public async Task<ActionResult<ApiResponse>> GrantSubscription(
         string userId, [FromBody] GrantSubscriptionDto dto, CancellationToken ct)
@@ -25,7 +25,7 @@ public class AdminUsersController(IAdminSubscriptionService adminSubService, IAd
         var result = await adminSubService.GrantAsync(AdminId, userId, dto, ct);
         return HandleResult(result, "Subscription granted.");
     }
-
+    [Authorize(Roles = "SuperAdmin")]
     [HttpPost("{userId}/subscription/revoke")]
     public async Task<ActionResult<ApiResponse>> RevokeSubscription(
         string userId, [FromBody] RevokeSubscriptionDto dto, CancellationToken ct)
