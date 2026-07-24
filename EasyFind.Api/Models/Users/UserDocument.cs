@@ -24,5 +24,6 @@ public enum DocumentType
     Certificate = 2,
     Passport = 3,
     RecommendationLetter = 4,
+    EnglishTest = 5,
     Other = 99
 }

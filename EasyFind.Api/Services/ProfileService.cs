@@ -46,6 +46,8 @@ public class ProfileService(ApplicationDbContext db,
         profile.WorkExperienceYears = dto.WorkExperienceYears;
         profile.ExperienceRange = dto.ExperienceRange;
         profile.EnglishLevel = dto.EnglishLevel;
+        profile.EnglishTestType = dto.EnglishTestType;
+        profile.EnglishTestScore = dto.EnglishTestScore;
         profile.UpdatedAt = DateTimeOffset.UtcNow;
         profile.DateOfBirth = dto.DateOfBirth;
         profile.Sex = dto.Sex;
@@ -92,5 +94,7 @@ public class ProfileService(ApplicationDbContext db,
         DateOfBirth = p.DateOfBirth,
         Sex = p.Sex?.ToString(),
         PassportStatus = p.PassportStatus?.ToString(),
+        EnglishTestType = (int?)p.EnglishTestType,
+        EnglishTestScore = p.EnglishTestScore,
     };
 }

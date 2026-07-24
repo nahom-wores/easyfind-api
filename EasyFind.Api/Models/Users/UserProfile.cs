@@ -32,13 +32,12 @@ public class UserProfile
     public ExperienceRange ExperienceRange { get; set; }
     [MaxLength(10)]
     public string? EnglishLevel { get; set; }      // CEFR: "B2", "C1"
-    
+    public EnglishTestType? EnglishTestType { get; set; }  // None, IELTS, TOEFL, Duolingo, Other
+    public string? EnglishTestScore { get; set; }           // "7.5", "95"
     public DateOnly? DateOfBirth { get; set; }
     public Sex? Sex { get; set; }
     public PassportStatus? PassportStatus { get; set; }
     
-    // CV stored in Cloudinary (you already have ImageService;
-    // we'll add a raw-file path for PDFs/docs)
     public string? CvFileUrl { get; set; }
     public DateTimeOffset? CvUploadedAt { get; set; }
 

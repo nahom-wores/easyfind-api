@@ -23,6 +23,8 @@ public class OnboardingDto
     public DateOnly? DateOfBirth { get; set; }
     public Sex? Sex { get; set; }
     public PassportStatus? PassportStatus { get; set; }
+    public EnglishTestType? EnglishTestType { get; set; }
+    public string? EnglishTestScore { get; set; }
 }
 public class ProfileResponseDto
 {
@@ -37,9 +39,12 @@ public class ProfileResponseDto
     public short WorkExperienceYears { get; set; }
     public ExperienceRange ExperienceRange { get; set; }
     public string? EnglishLevel { get; set; }
+    public int? EnglishTestType { get; set; }
+    public string? EnglishTestScore { get; set; }
     public string? CvFileUrl { get; set; }
     public bool HasProfile { get; set; }
     public DateOnly? DateOfBirth { get; set; }
     public string? Sex { get; set; }
     public string? PassportStatus { get; set; }
+    
 }

@@ -96,3 +96,12 @@ public enum Currency
     SAR = 6,
     CAD = 7
 }
+
+public enum EnglishTestType
+{
+    None,
+    IELTS,
+    TOEFL,
+    Duolingo,
+    Other
+}
