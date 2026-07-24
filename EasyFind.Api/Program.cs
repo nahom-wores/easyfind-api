@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
+using Amazon.S3;
 using Asp.Versioning;
 using EasyFind.Api;
 using EasyFind.Api.Data;
@@ -19,6 +20,7 @@ using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 using Serilog;
 using StackExchange.Redis;
+using Amazon.S3;
 
 //AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 var builder = WebApplication.CreateBuilder(args);
@@ -66,7 +68,8 @@ builder.WebHost.UseKestrel(option =>
 });
 builder.Services.AddAutoMapper(cfg => { }, typeof(MappingConfig));
 builder.Services.AddMemoryCache();
-
+builder.Services.AddDefaultAWSOptions(builder.Configuration.GetAWSOptions());
+builder.Services.AddAWSService<IAmazonS3>();
 #region service registrations
 
 builder.Services.AddLifetimeServices();

@@ -22,11 +22,11 @@ public static class LifetimeServicesCollectionExtensions
         services.AddScoped<ISubscriptionService, SubscriptionService>();
         services.AddScoped<SubscriptionGate>();
         services.AddScoped<SubscriptionExpiryJob>();
-        services.AddScoped<IStorageService, LocalStorageService>();
         services.AddScoped<IDocumentService, DocumentService>();
         services.AddScoped<IAdminStatsService, AdminStatsService>();
         services.AddScoped<IAdminSubscriptionService, AdminSubscriptionService>();
         services.AddScoped<IAdminUserService, AdminUserService>();
+        services.AddScoped<IStorageService, S3StorageService>();
         //services.AddHttpClient();
 
         //services.AddTransient<,>();
