@@ -21,6 +21,8 @@ using Scalar.AspNetCore;
 using Serilog;
 using StackExchange.Redis;
 using Amazon.S3;
+using EasyFind.Api.Services;
+using EasyFind.Api.Services.IServices;
 
 //AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 var builder = WebApplication.CreateBuilder(args);
@@ -32,8 +34,21 @@ var npgSqlConnectionString = builder.Configuration.GetConnectionString("DefaultC
 var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
 builder.Services.AddHealthChecks()
     .AddNpgSql(npgSqlConnectionString, name: "postgres");
-    //.AddRedis(redisConnectionString, name: "redis");
+//.AddRedis(redisConnectionString, name: "redis");
 
+
+var redisAvailable = !string.IsNullOrWhiteSpace(redisConnectionString)
+                     && !redisConnectionString.Contains("localhost");
+if (redisAvailable)
+{
+    builder.Services.AddSingleton<IConnectionMultiplexer>(
+        ConnectionMultiplexer.Connect(redisConnectionString!));
+    builder.Services.AddScoped<IRedisCacheService, RedisCacheService>();
+}
+else
+{
+    builder.Services.AddScoped<IRedisCacheService, NoOpCacheService>();
+}
 #region Versioning
 
 builder.Services.AddApiVersioning(options =>
@@ -70,6 +85,7 @@ builder.Services.AddAutoMapper(cfg => { }, typeof(MappingConfig));
 builder.Services.AddMemoryCache();
 builder.Services.AddDefaultAWSOptions(builder.Configuration.GetAWSOptions());
 builder.Services.AddAWSService<IAmazonS3>();
+
 #region service registrations
 
 builder.Services.AddLifetimeServices();
@@ -108,10 +124,10 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
 var key = builder.Configuration.GetValue<string>("JwtConfig:Secret");
 
 builder.Services.AddAuthentication(x =>
-{
-    x.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    x.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
+    {
+        x.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        x.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
     .AddJwtBearer(x =>
     {
         x.RequireHttpsMetadata = false;
@@ -143,6 +159,7 @@ builder.Services.AddAuthentication(x =>
 #endregion
 
 #region RateLimiter
+
 builder.Services.AddRateLimiter(rateLimitOptions =>
 {
     rateLimitOptions.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -150,7 +167,7 @@ builder.Services.AddRateLimiter(rateLimitOptions =>
     rateLimitOptions.AddPolicy("otp", context =>
     {
         var phone = context.Request.Headers["X-Phone"].ToString();
-        
+
         return RateLimitPartition.GetFixedWindowLimiter(
             phone ?? "anonymous",
             _ => new FixedWindowRateLimiterOptions
@@ -159,7 +176,7 @@ builder.Services.AddRateLimiter(rateLimitOptions =>
                 Window = TimeSpan.FromHours(1)
             });
     });
-    
+
     // Auth rule
     rateLimitOptions.AddPolicy("auth", context =>
     {
@@ -172,37 +189,40 @@ builder.Services.AddRateLimiter(rateLimitOptions =>
                 SegmentsPerWindow = 5
             });
     });
-    
-    
 });
+
 #endregion
 
 #region Logging Config
+
 // Log configuration using Serilog
 Log.Logger = new LoggerConfiguration().MinimumLevel.Warning()
     .WriteTo.Console()
     .WriteTo.File("logs/easyfind_api_log.txt", rollingInterval: RollingInterval.Day)
     .CreateLogger();
 builder.Host.UseSerilog(); // use Serilog for logging
+
 #endregion
 
 #region CORS (Cross-Origin Resource Sharing) - Essential for Frontends (React/Mobile)
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        
         // policy.WithOrigins("http://localhost:8080")
         //     .AllowAnyMethod()
         //     .AllowAnyHeader()
         //     .AllowCredentials();
-        
+
         policy.AllowAnyOrigin()
             .AllowAnyMethod()
             .AllowAnyHeader();
     });
 });
+
 #endregion
+
 builder.Services.AddHttpContextAccessor();
 
 builder.Services.AddControllers().AddJsonOptions(options =>
@@ -211,12 +231,10 @@ builder.Services.AddControllers().AddJsonOptions(options =>
     options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
 });
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi(options =>
-{
-    options.AddDocumentTransformer<BearerSecuritySchemeTransformer>();
-});
+builder.Services.AddOpenApi(options => { options.AddDocumentTransformer<BearerSecuritySchemeTransformer>(); });
 
 #region hangfire background service
+
 builder.Services.AddHangfire(config => config
     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
     .UseSimpleAssemblyNameTypeSerializer()
@@ -225,6 +243,7 @@ builder.Services.AddHangfire(config => config
         options.UseNpgsqlConnection(builder.Configuration
             .GetConnectionString("DefaultConnection"))));
 builder.Services.AddHangfireServer();
+
 #endregion
 
 // subscription options 
@@ -244,9 +263,9 @@ var app = builder.Build();
 // Configure the HTTP request pipeline.
 app.UseHangfireDashboard("/hangfire");
 RecurringJob.AddOrUpdate<SubscriptionExpiryJob>(
-    "subscription-expiry",                    // unique job id
-    job => job.RunAsync(),                    // what to call
-    Cron.Daily(2));                           // when: every day at 02:00 UTC
+    "subscription-expiry", // unique job id
+    job => job.RunAsync(), // what to call
+    Cron.Daily(2)); // when: every day at 02:00 UTC
 
 if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
 {
@@ -259,18 +278,19 @@ if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
 
         // Simply tell Scalar to use the "BearerAuth" scheme defined in your OpenAPI doc
         options.AddPreferredSecuritySchemes("BearerAuth");
-       
     });
 }
+
 app.MapHealthChecks("/health", new HealthCheckOptions
 {
-    ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse 
+    ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
 });
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     await db.Database.MigrateAsync();
 }
+
 // ── Seed Identity roles ──────────────────────────────
 using (var scope = app.Services.CreateScope())
 {
@@ -282,6 +302,7 @@ using (var scope = app.Services.CreateScope())
             await roleManager.CreateAsync(new IdentityRole(role));
     }
 }
+
 if (app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 app.UseRateLimiter();
