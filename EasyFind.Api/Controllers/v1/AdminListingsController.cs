@@ -1,7 +1,9 @@
 ﻿using Asp.Versioning;
+using EasyFind.Api.Features.Listings.Commands.CreateListing;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.Listings;
 using EasyFind.Api.Services.IServices;
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -11,7 +13,7 @@ namespace EasyFind.Api.Controllers.v1;
 [ApiController]
 [ApiVersion("1.0")]
 //[Authorize(Roles = "Admin")]
-public class AdminListingsController(IListingAdminService service) : ApiControllerBase
+public class AdminListingsController(IListingAdminService service, IMediator mediator) : ApiControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<ApiResponse>> GetAll([FromQuery] AdminListingFilterDto filter, CancellationToken ct)
@@ -28,8 +30,8 @@ public class AdminListingsController(IListingAdminService service) : ApiControll
 
     [HttpPost]
     public async Task<ActionResult<ApiResponse>> Create([FromBody] CreateListingDto dto, CancellationToken ct)
-        => HandleResult(await service.CreateAsync(dto, ct));
-
+        => HandleResult(await mediator.Send(new CreateListingCommand{CreateListingDto = dto}, ct));
+    
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<ApiResponse>> Update(Guid id, [FromBody] UpdateListingDto dto, CancellationToken ct)
         => HandleResult(await service.UpdateAsync(id, dto, ct));

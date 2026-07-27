@@ -64,6 +64,10 @@ builder.Services.AddApiVersioning(options =>
 });
 
 #endregion
+//MidiatR 
+// Scans assembly and wires up every handler automatically
+builder.Services.AddMediatR(cfg =>
+    cfg.RegisterServicesFromAssembly(typeof(Program).Assembly));
 
 builder.Services.Configure<FormOptions>(options =>
 {
