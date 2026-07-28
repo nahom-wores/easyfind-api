@@ -31,7 +31,7 @@ public class Listing
 
     public bool IsActive { get; set; } = true;
     public bool IsFeatured { get; set; } = false;
-
+    public string? ImageUrl { get; set; }   // the S3 URL (or key) of the listing image
     [MaxLength(100)]
     public string? Source { get; set; } 
 

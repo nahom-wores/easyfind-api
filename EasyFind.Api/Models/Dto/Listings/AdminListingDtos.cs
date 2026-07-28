@@ -30,6 +30,7 @@ public class AdminListingDto
     public int? SalaryCurrency { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+    public string ImageUrl { get; set; }
 }
 public class CreateListingDto
 {
@@ -57,6 +58,8 @@ public class CreateListingDto
     public ScholarshipField? ScholarshipField { get; set; }
     public DegreeLevel? DegreeLevel { get; set; }
     public FundingType? FundingType { get; set; }
+    //
+    public string ImageUrl { get; set; }
 }
 
 // Update is the same shape — admin sends the full corrected listing

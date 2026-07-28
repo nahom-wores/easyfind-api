@@ -194,6 +194,6 @@ public class ListingAdminService(ApplicationDbContext db, IRedisCacheService cac
         UpdatedAt = l.UpdatedAt,
         SalaryPeriod = (int?)l.SalaryPeriod,
         SalaryCurrency = (int?)l.SalaryCurrency,
-        
+        ImageUrl = l.ImageUrl
     };
 }

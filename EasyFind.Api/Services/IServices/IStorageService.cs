@@ -10,4 +10,6 @@ public interface IStorageService
     // Time-limited access URL (for private files)
     Task<string> GetAccessUrlAsync(string key, CancellationToken ct = default);
     Task DeleteAsync(string key, CancellationToken ct = default);
+    Task<string> UploadPublicImageAsync(Stream fileStream, string fileName, string contentType, CancellationToken ct = default);
+    Task DeletePublicImageAsync(string url, CancellationToken ct = default);
 }
