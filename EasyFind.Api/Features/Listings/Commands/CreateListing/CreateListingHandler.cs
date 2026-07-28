@@ -69,6 +69,6 @@ public class CreateListingHandler(ApplicationDbContext db, IRedisCacheService ca
         UpdatedAt = l.UpdatedAt,
         SalaryPeriod = (int?)l.SalaryPeriod,
         SalaryCurrency = (int?)l.SalaryCurrency,
-        
+        ImageUrl = l.ImageUrl
     };
 }

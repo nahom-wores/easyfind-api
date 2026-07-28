@@ -7,6 +7,8 @@ namespace EasyFind.Api.Services;
 public class S3StorageService(IAmazonS3 s3,
     IConfiguration config, ILogger<S3StorageService> logger) : IStorageService
 {
+    private readonly string _imageBucket =
+        config["AWS:S3:ImageBucketName"] ?? throw new InvalidOperationException("S3 bucket not configured");
     private readonly string _bucket =
         config["AWS:S3:BucketName"] ?? throw new InvalidOperationException("S3 bucket not configured");
     public async Task<StoredFile> UploadAsync(Stream fileStream, string fileName,
@@ -48,6 +50,34 @@ public class S3StorageService(IAmazonS3 s3,
 
     public async Task DeleteAsync(string key, CancellationToken ct = default)
     {
+        await s3.DeleteObjectAsync(new DeleteObjectRequest
+        {
+            BucketName = _bucket,
+            Key = key
+        }, ct);
+    }
+
+    public async Task<string> UploadPublicImageAsync(
+        Stream fileStream, string fileName, string contentType, CancellationToken ct = default)
+    {
+        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+        var key = $"listings/{Guid.NewGuid():N}{ext}";
+
+        await s3.PutObjectAsync(new PutObjectRequest
+        {
+            BucketName = _imageBucket,
+            Key = key,
+            InputStream = fileStream,
+            ContentType = contentType
+        }, ct);
+
+        return $"https://{_imageBucket}.s3.eu-central-1.amazonaws.com/{key}";
+    }
+
+    public async Task DeletePublicImageAsync(string url, CancellationToken ct = default)
+    {
+        // extract the key from the URL
+        var key = new Uri(url).AbsolutePath.TrimStart('/');
         await s3.DeleteObjectAsync(new DeleteObjectRequest
         {
             BucketName = _bucket,

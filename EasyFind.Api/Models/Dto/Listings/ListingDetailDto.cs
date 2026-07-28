@@ -27,4 +27,5 @@ public class ListingDetailDto
     public int? SalaryCurrency { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+    public string ImageUrl { get; set; }
 }

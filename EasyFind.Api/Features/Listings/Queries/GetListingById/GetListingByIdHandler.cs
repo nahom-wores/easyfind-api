@@ -46,6 +46,6 @@ public class GetListingByIdHandler(ApplicationDbContext db) : IRequestHandler<Ge
         UpdatedAt = l.UpdatedAt,
         SalaryPeriod = (int?)l.SalaryPeriod,
         SalaryCurrency = (int?)l.SalaryCurrency,
-        
+        ImageUrl = l.ImageUrl
     };
 }

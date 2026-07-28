@@ -15,4 +15,5 @@ public class ListingFeedItemDto
     public string? ApplicationStatus { get; set; }
     public int RelevanceScore { get; set; }       // exposed for debugging; can hide later
     public DateTimeOffset CreatedAt { get; set; }
+    public string? ImageUrl { get; set; }
 }
