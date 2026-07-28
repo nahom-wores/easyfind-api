@@ -76,6 +76,7 @@ public class FeedService(
             IsFeatured = c.IsFeatured,
             RelevanceScore = c.RelevanceScore,
             CreatedAt = c.CreatedAt,
+            ImageUrl = c.ImageUrl,
             IsBookmarked = bookmarkedIds.Contains(c.Id),
             ApplicationStatus = appStatusLookup.TryGetValue(c.Id, out var status)
                 ? status.ToString()
@@ -180,7 +181,8 @@ public class FeedService(
                 Deadline = l.Deadline,
                 IsFeatured = l.IsFeatured,
                 RelevanceScore = x.Score,
-                CreatedAt = l.CreatedAt
+                CreatedAt = l.CreatedAt,
+                ImageUrl = l.ImageUrl
             };
         }).ToList();
 
