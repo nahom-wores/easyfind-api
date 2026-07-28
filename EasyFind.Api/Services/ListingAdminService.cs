@@ -83,12 +83,22 @@ public class ListingAdminService(ApplicationDbContext db, IRedisCacheService cac
         var listing = await db.Listings.FirstOrDefaultAsync(l => l.Id == id, ct);
         if (listing == null) return Result.NotFound("Listing not found.");
 
-        listing.DeletedAt = DateTimeOffset.UtcNow;
-        listing.IsActive = false;
+        db.Listings.Remove(listing);
         await db.SaveChangesAsync(ct);
         await cache.RemoveByPatternAsync("feed:*");
         return Result.Success();
     }
+    // public async Task<Result> SoftDeleteAsync(Guid id, CancellationToken ct = default)
+    // {
+    //     var listing = await db.Listings.FirstOrDefaultAsync(l => l.Id == id, ct);
+    //     if (listing == null) return Result.NotFound("Listing not found.");
+    //
+    //     listing.DeletedAt = DateTimeOffset.UtcNow;
+    //     listing.IsActive = false;
+    //     await db.SaveChangesAsync(ct);
+    //     await cache.RemoveByPatternAsync("feed:*");
+    //     return Result.Success();
+    // }
 
     public async Task<Result> RestoreAsync(Guid id, CancellationToken ct = default)
     {

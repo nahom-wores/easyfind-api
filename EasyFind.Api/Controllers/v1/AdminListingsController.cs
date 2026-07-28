@@ -15,7 +15,7 @@ namespace EasyFind.Api.Controllers.v1;
 [Route("api/v{version:apiVersion}/admin/listings")]
 [ApiController]
 [ApiVersion("1.0")]
-//[Authorize(Roles = "Admin")]
+[Authorize(Roles = "Admin")]
 public class AdminListingsController(IListingAdminService service,
     IMediator mediator, IStorageService storage, ApplicationDbContext db) : ApiControllerBase
 {
@@ -53,7 +53,6 @@ public class AdminListingsController(IListingAdminService service,
         => HandleResult(await service.SetActiveAsync(id, isActive, ct), "Status updated.");
     
     [HttpPost("{id:guid}/image")]
-    [Authorize(Roles = "Admin,SuperAdmin")]
     public async Task<ActionResult<ApiResponse>> UploadImage(
         Guid id, IFormFile file, CancellationToken ct)
     {
