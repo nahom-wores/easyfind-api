@@ -47,7 +47,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(l => l.SalaryPeriod).HasConversion<int>();
             entity.Property(l => l.SalaryCurrency).HasConversion<int>();
             // Soft-delete filter: every query auto-excludes deleted rows
-            entity.HasQueryFilter(l => l.DeletedAt == null);
+            //entity.HasQueryFilter(l => l.DeletedAt == null);
 
             // Indexes for feed performance
             entity.HasIndex(l => new { l.Type, l.CountryCode, l.IsActive });
