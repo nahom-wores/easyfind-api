@@ -41,7 +41,7 @@ namespace EasyFind.Api.Controllers.v1
 
         
 
-        [EnableRateLimiting("otp")]
+       // [EnableRateLimiting("otp")]
         [HttpPost("verify-otp")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
