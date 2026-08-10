@@ -1,4 +1,5 @@
 ﻿using EasyFind.Api.Features.Listings;
+using EasyFind.Api.Features.Listings.Queries.GetListingById;
 using EasyFind.Api.Services;
 using EasyFind.Api.Services.IServices;
 using EasyFind.Api.Services.Jobs;
@@ -30,6 +31,7 @@ public static class LifetimeServicesCollectionExtensions
         services.AddScoped<ICurrentUser, CurrentUser>();
         services.AddScoped<IStorageService, S3StorageService>();
         services.AddScoped<ListingAuthorizationService>();
+        services.AddScoped<GetListingByIdHandler>();
         
         //services.AddHttpClient();
 
