@@ -1,4 +1,5 @@
-﻿using EasyFind.Api.Models.Enum;
+﻿using System.ComponentModel.DataAnnotations;
+using EasyFind.Api.Models.Enum;
 
 namespace EasyFind.Api.Models.Dto.Listings;
 
@@ -34,19 +35,36 @@ public class AdminListingDto
 }
 public class CreateListingDto
 {
+    [Required]
     public ListingType Type { get; set; }
+
+    [Required, MaxLength(200)]
     public string Title { get; set; } = string.Empty;
+
+    [MaxLength(200)]
     public string? TitleAm { get; set; }
+
+    [Required, MaxLength(150)]
     public string Organization { get; set; } = string.Empty;
+
+    [Required, StringLength(2, MinimumLength = 2)]
     public string CountryCode { get; set; } = string.Empty;
+
+    [Required, MaxLength(5000)]
     public string Description { get; set; } = string.Empty;
+
+    [MaxLength(5000)]
     public string? DescriptionAm { get; set; }
+
+    [Required, Url, MaxLength(500)]
     public string ApplyUrl { get; set; } = string.Empty;
+    
     public DateOnly? Deadline { get; set; }
+
     public bool IsFeatured { get; set; }
     public string? Source { get; set; }
 
-    // Job-only
+    // Job-only — NOT [Required]; validated conditionally when Type == Job
     public JobCategory? JobCategory { get; set; }
     public int? SalaryMin { get; set; }
     public int? SalaryMax { get; set; }
@@ -54,12 +72,14 @@ public class CreateListingDto
     public int? MinExperienceYears { get; set; }
     public SalaryPeriod? SalaryPeriod { get; set; }
     public Currency? SalaryCurrency { get; set; }
-    // Scholarship-only
+
+    // Scholarship-only — NOT [Required]; validated conditionally when Type == Scholarship
     public ScholarshipField? ScholarshipField { get; set; }
     public DegreeLevel? DegreeLevel { get; set; }
     public FundingType? FundingType { get; set; }
-    //
-    public string ImageUrl { get; set; }
+
+    // NOT required — image is uploaded separately after create, via the image endpoint
+    public string? ImageUrl { get; set; }
 }
 
 // Update is the same shape — admin sends the full corrected listing

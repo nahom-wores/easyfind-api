@@ -7,12 +7,10 @@ using MediatR;
 
 namespace EasyFind.Api.Features.Listings.Commands.CreateListing;
 
-public class CreateListingHandler(ApplicationDbContext db, IRedisCacheService cache) :
-    IRequestHandler<CreateListingCommand, Result<AdminListingDto>>
+public class CreateListingHandler(ApplicationDbContext db, IRedisCacheService cache)
 {
-    public async Task<Result<AdminListingDto>> Handle(CreateListingCommand request, CancellationToken ct)
+    public async Task<Result<AdminListingDto>> ExecuteAsync(CreateListingDto dto, CancellationToken ct = default)
     {
-        var dto = request.CreateListingDto;
         var listing = new Listing
         {
             Type = dto.Type,

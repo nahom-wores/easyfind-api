@@ -33,8 +33,9 @@ public class AdminListingsController(IListingAdminService service,
         => HandleResult(await service.GetByIdAsync(id, ct));
 
     [HttpPost]
-    public async Task<ActionResult<ApiResponse>> Create([FromBody] CreateListingDto dto, CancellationToken ct)
-        => HandleResult(await mediator.Send(new CreateListingCommand{CreateListingDto = dto}, ct));
+    public async Task<ActionResult<ApiResponse>> Create([FromBody] CreateListingDto dto,
+        [FromServices] CreateListingHandler createListingHandler, CancellationToken ct)
+        => HandleResult(await createListingHandler.ExecuteAsync(dto, ct));
     
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<ApiResponse>> Update(Guid id, [FromBody] UpdateListingDto dto, CancellationToken ct)
