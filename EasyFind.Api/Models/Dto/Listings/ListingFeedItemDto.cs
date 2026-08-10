@@ -16,4 +16,6 @@ public class ListingFeedItemDto
     public int RelevanceScore { get; set; }       // exposed for debugging; can hide later
     public DateTimeOffset CreatedAt { get; set; }
     public string? ImageUrl { get; set; }
+    public bool IsLocked { get; set; }
+    public string? ApplyUrl { get; set; }
 }

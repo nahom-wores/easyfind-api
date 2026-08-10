@@ -16,4 +16,10 @@ public class SubscriptionGate(IOptions<SubscriptionOptions> opts)
     // Convenience: the effective result cap for a tier
     public int? ResultCapFor(SubscriptionTier tier) =>
         IsPaid(tier) ? null : _opts.FreeFeedCap;   // null = unlimited
+    
+    public string? GateOrganization(string? organization, SubscriptionTier tier)
+        => IsPaid(tier) ? organization : null;
+    
+    public string? GateApplyUrl(string? applyUrl, SubscriptionTier tier)
+        => IsPaid(tier) ? applyUrl : null;
 }

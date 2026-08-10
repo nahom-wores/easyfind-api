@@ -12,12 +12,16 @@ namespace EasyFind.Api.Controllers.v1;
 [ApiController]
 [ApiVersion("1.0")]
 [Authorize]
-public class ListingsController(IMediator mediator) : ApiControllerBase
+public class ListingsController(GetListingByIdHandler getListingByIdHandler) : ApiControllerBase
 {
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<ApiResponse>> GetDetail(Guid id, CancellationToken ct)
     {
-        var result = await mediator.Send(new GetListingByIdQuery(id, UserId), ct);
+        if (getListingByIdHandler is null)
+        {
+            throw new ArgumentNullException(nameof(getListingByIdHandler));
+        }
+        var result = await getListingByIdHandler.FetchAsync(id, UserId, ct);
         return HandleResult(result);
     }
 }

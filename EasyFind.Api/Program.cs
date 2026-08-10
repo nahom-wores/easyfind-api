@@ -32,6 +32,7 @@ var builder = WebApplication.CreateBuilder(args);
 // 1. Get the JSON string from Environment Variables
 var npgSqlConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
+
 builder.Services.AddHealthChecks()
     .AddNpgSql(npgSqlConnectionString, name: "postgres");
 //.AddRedis(redisConnectionString, name: "redis");
@@ -97,18 +98,18 @@ builder.Services.AddLifetimeServices();
 #endregion
 
 #region Advanced Redis Caching
-
-builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
-{
-    var configuration = ConfigurationOptions.Parse(redisConnectionString!, true);
-    configuration.AbortOnConnectFail = false; // Don't crash if Redis is down
-    configuration.ConnectTimeout = 5000; // 5 second timeout
-    configuration.SyncTimeout = 5000;
-    configuration.ConnectRetry = 3; // Retry 3 times
-    configuration.KeepAlive = 60; // Keep connection alive
-    configuration.DefaultDatabase = 0; // Use database 0
-    return ConnectionMultiplexer.Connect(configuration);
-});
+//
+// builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+// {
+//     var configuration = ConfigurationOptions.Parse(redisConnectionString!, true);
+//     configuration.AbortOnConnectFail = false; // Don't crash if Redis is down
+//     configuration.ConnectTimeout = 5000; // 5 second timeout
+//     configuration.SyncTimeout = 5000;
+//     configuration.ConnectRetry = 3; // Retry 3 times
+//     configuration.KeepAlive = 60; // Keep connection alive
+//     configuration.DefaultDatabase = 0; // Use database 0
+//     return ConnectionMultiplexer.Connect(configuration);
+// });
 
 #endregion
 
@@ -289,11 +290,11 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 {
     ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
 });
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    await db.Database.MigrateAsync();
-}
+// using (var scope = app.Services.CreateScope())
+// {
+//     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+//     await db.Database.MigrateAsync();
+// }
 
 // ── Seed Identity roles ──────────────────────────────
 using (var scope = app.Services.CreateScope())
@@ -317,3 +318,4 @@ app.UseAuthorization();
 app.UseRequestLocalization(localizationOptions);
 app.MapControllers();
 app.Run();
+public partial class Program { }

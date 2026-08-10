@@ -15,6 +15,7 @@ public class CachedFeedItem
     public int RelevanceScore { get; set; }
     public DateTimeOffset CreatedAt { get; set; }   
     public string? ImageUrl { get; set; }   
+    public string? ApplyUrl { get; set; }
 }
 // What we cache: the ranked page of cacheable items + pagination meta.
 public class CachedFeedPage

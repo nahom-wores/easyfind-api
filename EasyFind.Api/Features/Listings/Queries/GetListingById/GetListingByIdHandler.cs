@@ -1,35 +1,50 @@
 ﻿using EasyFind.Api.Data;
+using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.Listings;
 using EasyFind.Api.Models.Listings;
+using EasyFind.Api.Models.Subscriptions;
+using EasyFind.Api.Services;
 using MediatR;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Listings.Queries.GetListingById;
 
-public class GetListingByIdHandler(ApplicationDbContext db) : IRequestHandler<GetListingByIdQuery,  Result<ListingDetailDto>>
+public class GetListingByIdHandler(ApplicationDbContext db,
+    UserManager<ApplicationUser> userManager, SubscriptionGate gate) 
 {
-    public async Task<Result<ListingDetailDto>> Handle(GetListingByIdQuery request, CancellationToken ct)
+    public async Task<Result<ListingDetailDto>> FetchAsync(
+        Guid listingId, string userId, CancellationToken ct = default)
     {
         var listing = await db.Listings
-            .IgnoreQueryFilters()
             .AsNoTracking()
-            .FirstOrDefaultAsync(l => l.Id == request.Id, ct);
-        if(listing is null) return Result<ListingDetailDto>.NotFound("Listing not found.");
-        return Result<ListingDetailDto>.Success(Map(listing));
-        
+            .FirstOrDefaultAsync(l => l.Id == listingId && l.IsActive, ct);
+
+        if (listing is null)
+            return Result<ListingDetailDto>.NotFound("Listing not found.");
+
+        // Subscription gate — free users don't get the company name or apply link
+        var user = await userManager.FindByIdAsync(userId);
+        var tier = user?.SubscriptionTier ?? SubscriptionTier.Free;
+
+        return Result<ListingDetailDto>.Success(Map(listing, tier));
     }
-    private static ListingDetailDto Map(Listing l) => new()
+    private ListingDetailDto Map(Listing l, SubscriptionTier tier) => new()
     {
         Id = l.Id,
         Type = l.Type.ToString(),
         Title = l.Title,
         TitleAm = l.TitleAm,
-        Organization = l.Organization,
+
+        // ── Gated fields: only real values for paid users ──
+        Organization = gate.GateOrganization(l.Organization, tier),
+        ApplyUrl     = gate.GateApplyUrl(l.ApplyUrl, tier),
+        IsLocked     = !gate.IsPaid(tier),
+
         CountryCode = l.CountryCode,
         Description = l.Description,
         DescriptionAm = l.DescriptionAm,
-        ApplyUrl = l.ApplyUrl,
         Deadline = l.Deadline,
         IsActive = l.IsActive,
         IsFeatured = l.IsFeatured,

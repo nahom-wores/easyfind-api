@@ -28,4 +28,5 @@ public class ListingDetailDto
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public string ImageUrl { get; set; }
+    public bool IsLocked { get; set; }
 }

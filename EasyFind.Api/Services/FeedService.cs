@@ -69,7 +69,8 @@ public class FeedService(
             Type = c.Type,
             Title = c.Title,
             TitleAm = c.TitleAm,
-            Organization = c.Organization,
+            Organization = gate.GateOrganization(c.Organization, tier),
+            ApplyUrl = gate.GateApplyUrl(c.ApplyUrl, tier),
             CountryCode = c.CountryCode,
             Category = c.Category,
             Deadline = c.Deadline,
@@ -77,6 +78,7 @@ public class FeedService(
             RelevanceScore = c.RelevanceScore,
             CreatedAt = c.CreatedAt,
             ImageUrl = c.ImageUrl,
+            IsLocked = !gate.IsPaid(tier),
             IsBookmarked = bookmarkedIds.Contains(c.Id),
             ApplicationStatus = appStatusLookup.TryGetValue(c.Id, out var status)
                 ? status.ToString()
