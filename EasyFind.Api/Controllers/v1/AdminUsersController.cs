@@ -1,9 +1,10 @@
 ﻿using System.Security.Claims;
 using Asp.Versioning;
+using EasyFind.Api.Features.Admin.Commands;
+using EasyFind.Api.Features.Admin.Queries;
 using EasyFind.Api.Models.Admin;
 using EasyFind.Api.Models.Dto.Admin;
 using EasyFind.Api.Models.Dto.Common;
-using EasyFind.Api.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -13,38 +14,50 @@ namespace EasyFind.Api.Controllers.v1;
 [ApiController]
 [ApiVersion("1.0")]
 [Authorize(Roles = "Admin")]
-public class AdminUsersController(IAdminSubscriptionService adminSubService, IAdminUserService adminUserService) : ApiControllerBase
+public class AdminUsersController : ApiControllerBase
 {
+    // Who performed the action — recorded on the AdminAction audit row.
     private string? AdminId => User.FindFirstValue(ClaimTypes.NameIdentifier);
+
     [Authorize(Roles = "SuperAdmin")]
     [HttpPost("{userId}/subscription/grant")]
     public async Task<ActionResult<ApiResponse>> GrantSubscription(
-        string userId, [FromBody] GrantSubscriptionDto dto, CancellationToken ct)
+        string userId,
+        [FromBody] GrantSubscriptionDto dto,
+        [FromServices] GrantSubscriptionHandler handler,
+        CancellationToken ct)
     {
         if (string.IsNullOrEmpty(AdminId)) return Unauthorized();
-        var result = await adminSubService.GrantAsync(AdminId, userId, dto, ct);
-        return HandleResult(result, "Subscription granted.");
+        return HandleResult(await handler.HandleAsync(AdminId, userId, dto, ct), "Subscription granted.");
     }
+
     [Authorize(Roles = "SuperAdmin")]
     [HttpPost("{userId}/subscription/revoke")]
     public async Task<ActionResult<ApiResponse>> RevokeSubscription(
-        string userId, [FromBody] RevokeSubscriptionDto dto, CancellationToken ct)
+        string userId,
+        [FromBody] RevokeSubscriptionDto dto,
+        [FromServices] RevokeSubscriptionHandler handler,
+        CancellationToken ct)
     {
         if (string.IsNullOrEmpty(AdminId)) return Unauthorized();
-        var result = await adminSubService.RevokeAsync(AdminId, userId, dto, ct);
-        return HandleResult(result, "Subscription revoked.");
+        return HandleResult(await handler.HandleAsync(AdminId, userId, dto, ct), "Subscription revoked.");
     }
-    
+
     [HttpGet]
-    public async Task<ActionResult<ApiResponse>> GetUsers([FromQuery] AdminUserFilterDto filter, CancellationToken ct)
+    public async Task<ActionResult<ApiResponse>> GetUsers(
+        [FromQuery] AdminUserFilterDto filter,
+        [FromServices] ListUsersHandler handler,
+        CancellationToken ct)
     {
         if (filter.Page < 1) filter.Page = 1;
         if (filter.PageSize is < 1 or > 100) filter.PageSize = 20;
-        var result = await adminUserService.GetUsersAsync(filter, ct);
-        return Ok(new ApiResponse { IsSuccess = true, Result = result });
+        return HandleResult(await handler.HandleAsync(filter, ct));
     }
 
     [HttpGet("{userId}")]
-    public async Task<ActionResult<ApiResponse>> GetUserDetail(string userId, CancellationToken ct)
-        => HandleResult(await adminUserService.GetUserDetailAsync(userId, ct));
+    public async Task<ActionResult<ApiResponse>> GetUserDetail(
+        string userId,
+        [FromServices] GetUserDetailHandler handler,
+        CancellationToken ct)
+        => HandleResult(await handler.HandleAsync(userId, ct));
 }

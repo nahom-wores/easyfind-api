@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Amazon.S3;
@@ -65,11 +65,6 @@ builder.Services.AddApiVersioning(options =>
 });
 
 #endregion
-//MidiatR 
-// Scans assembly and wires up every handler automatically
-builder.Services.AddMediatR(cfg =>
-    cfg.RegisterServicesFromAssembly(typeof(Program).Assembly));
-
 builder.Services.Configure<FormOptions>(options =>
 {
     options.MultipartBodyLengthLimit = 100 * 1024 * 1024; // 100MB
@@ -86,7 +81,6 @@ builder.WebHost.UseKestrel(option =>
     option.AddServerHeader = false;
     option.Limits.MaxRequestBodySize = 100 * 1024 * 1024; // 100MB
 });
-builder.Services.AddAutoMapper(cfg => { }, typeof(MappingConfig));
 builder.Services.AddMemoryCache();
 builder.Services.AddDefaultAWSOptions(builder.Configuration.GetAWSOptions());
 builder.Services.AddAWSService<IAmazonS3>();

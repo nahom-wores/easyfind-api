@@ -1,23 +1,28 @@
 ﻿using System.Text;
 using System.Text.Json;
 using Asp.Versioning;
+using EasyFind.Api.Features.Subscriptions.Commands;
 using EasyFind.Api.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EasyFind.Api.Controllers.v1;
 
+// Chapa calls us twice for one payment: a server-to-server webhook and a
+// browser callback. Both routes funnel into the same handler, which is
+// idempotent by design.
 [Route("api/v{version:apiVersion}/webhooks")]
 [ApiController]
 [ApiVersion("1.0")]
 public class WebhooksController(
-    ISubscriptionService subscriptionService,
     IChapaWebhookVerifier webhookVerifier,
     ILogger<WebhooksController> logger) : ControllerBase
 {
     [HttpPost("chapa")]
     [AllowAnonymous]
-    public async Task<IActionResult> ChapaWebhook(CancellationToken ct)
+    public async Task<IActionResult> ChapaWebhook(
+        [FromServices] ProcessChapaPaymentHandler handler,
+        CancellationToken ct)
     {
         try
         {
@@ -58,7 +63,7 @@ public class WebhooksController(
             }
 
             if (eventType == "charge.success" || status == "success")
-                await subscriptionService.HandleWebhookAsync(txRef, ct);
+                await handler.HandleAsync(txRef, ct);
             else
                 logger.LogInformation("Chapa webhook {TxRef} status {Status}, no action.", txRef, status);
 
@@ -69,17 +74,17 @@ public class WebhooksController(
             logger.LogError(ex, "Webhook blew up: {Message}", ex.Message);
             throw;
         }
-       
     }
-    
+
     // GET callback — Chapa hits this right after payment with query params.
-    // Redundant with the webhook by design; HandleWebhookAsync is idempotent.
+    // Redundant with the webhook by design; the handler is idempotent.
     [HttpGet("chapa/callback")]
     [AllowAnonymous]
     public async Task<IActionResult> ChapaCallback(
         [FromQuery(Name = "trx_ref")] string? trxRef,
         [FromQuery(Name = "tx_ref")] string? txRef,
         [FromQuery] string? status,
+        [FromServices] ProcessChapaPaymentHandler handler,
         CancellationToken ct)
     {
         // Chapa's docs show "trx_ref" on the callback but "tx_ref" elsewhere — accept either
@@ -93,11 +98,10 @@ public class WebhooksController(
 
         logger.LogInformation("Chapa callback for {Ref}, status {Status}", reference, status);
 
-        // Verify-in-service is the real gate; we don't trust this status blindly.
-        // Safe to call even if webhook already processed — idempotent.
-        await subscriptionService.HandleWebhookAsync(reference, ct);
+        // Verify-in-handler is the real gate; we don't trust this status blindly.
+        // Safe to call even if the webhook already processed — idempotent.
+        await handler.HandleAsync(reference, ct);
 
         return Ok();
     }
-    
 }

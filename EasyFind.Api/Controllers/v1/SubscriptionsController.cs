@@ -1,7 +1,8 @@
 ﻿using Asp.Versioning;
+using EasyFind.Api.Features.Subscriptions.Commands;
+using EasyFind.Api.Features.Subscriptions.Queries;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.Subscriptions;
-using EasyFind.Api.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -11,23 +12,25 @@ namespace EasyFind.Api.Controllers.v1;
 [ApiController]
 [ApiVersion("1.0")]
 [Authorize]
-public class SubscriptionsController(ISubscriptionService subscriptionService) : ApiControllerBase
+public class SubscriptionsController : ApiControllerBase
 {
-   
-    
+    // Returns a Chapa checkout URL for the client to open.
     [HttpPost("initiate")]
-    public async Task<ActionResult<ApiResponse>> Initiate([FromBody] InitiateSubscriptionDto dto, CancellationToken ct)
+    public async Task<ActionResult<ApiResponse>> Initiate(
+        [FromBody] InitiateSubscriptionDto dto,
+        [FromServices] InitiateSubscriptionHandler handler,
+        CancellationToken ct)
     {
         if (string.IsNullOrEmpty(UserId)) return Unauthorized();
-        var result = await subscriptionService.InitiateAsync(UserId, dto.Tier, ct);
-        return HandleResult(result);
+        return HandleResult(await handler.HandleAsync(UserId, dto.Tier, ct));
     }
-    
+
     [HttpGet("me")]
-    public async Task<ActionResult<ApiResponse>> GetMyStatus(CancellationToken ct)
+    public async Task<ActionResult<ApiResponse>> GetMyStatus(
+        [FromServices] GetMySubscriptionStatusHandler handler,
+        CancellationToken ct)
     {
         if (string.IsNullOrEmpty(UserId)) return Unauthorized();
-        var result = await subscriptionService.GetMyStatusAsync(UserId, ct);
-        return HandleResult(result);
+        return HandleResult(await handler.HandleAsync(UserId, ct));
     }
 }

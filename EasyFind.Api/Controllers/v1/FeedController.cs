@@ -1,31 +1,34 @@
-﻿using System.Net;
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Asp.Versioning;
+using EasyFind.Api.Features.Listings.Queries;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.Listings;
-using EasyFind.Api.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EasyFind.Api.Controllers.v1;
 
-
 [Route("api/v{version:apiVersion}/[controller]")]
 [ApiController]
 [ApiVersion("1.0")]
 [Authorize]
-public class FeedController(IFeedService feedService) : ApiControllerBase
+public class FeedController : ApiControllerBase
 {
-    private string? UserId => User.FindFirstValue(ClaimTypes.NameIdentifier);
-
     [HttpGet]
-    public async Task<ActionResult<ApiResponse>> GetFeed([FromQuery] FeedRequestDto request, CancellationToken ct)
+    public async Task<ActionResult<ApiResponse>> GetFeed(
+        [FromQuery] FeedRequestDto request,
+        [FromServices] GetFeedHandler handler,
+        CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(UserId)) return Unauthorized();
+        // [Authorize] should guarantee this, but the feed is meaningless without
+        // a user, so fail with 401 rather than throwing.
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+        // Clamp paging here so no handler has to defend against it.
         if (request.Page < 1) request.Page = 1;
         if (request.PageSize is < 1 or > 50) request.PageSize = 20;
 
-        var result = await feedService.GetPersonalizedFeedAsync(UserId, request, ct);
-        return Ok(new ApiResponse { IsSuccess = true, Result = result });
+        return HandleResult(await handler.HandleAsync(userId, request, ct));
     }
 }

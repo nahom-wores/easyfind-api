@@ -87,3 +87,9 @@ public class UpdateListingDto : CreateListingDto
 {
 }
 
+// What the image upload endpoint returns
+public class ListingImageDto
+{
+    public string ImageUrl { get; set; } = string.Empty;
+}
+
