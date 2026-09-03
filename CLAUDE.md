@@ -197,10 +197,14 @@ via `HasConversion<int>()`. `UserProfile`'s enum lists map to Postgres `int[]` t
 
 **Soft delete:** `Listing.DeletedAt` exists but the global `HasQueryFilter` is commented out, so `DeletedAt`
 is filtered *explicitly* inside `ListingAuthorizationService` instead (and `IgnoreQueryFilters()` no longer
-appears anywhere — it was a no-op). Note that `DeleteListingHandler` does a **hard** `db.Listings.Remove`, so
-nothing sets `DeletedAt` today and `RestoreListingHandler` can never find a row. That handler is the switch if
-you re-enable soft delete (the two-line change is written out in its comment), and the read side already
-honours it.
+appears anywhere — it was a no-op).
+
+`DeleteListingHandler` performs a **soft** delete: it stamps `DeletedAt`, clears `IsActive`, and keeps the
+row. That is what makes `POST /admin/listings/{id}/restore` work at all — it previously hard-deleted, so
+there was never a row left to restore. It also protects history: `UserApplication` references listings with
+`DeleteBehavior.Restrict`, so hard-deleting a listing someone had applied to would have failed outright.
+Deleting twice is a no-op rather than re-stamping the time. Restore clears `DeletedAt` but deliberately does
+**not** republish — that is `PATCH .../active`.
 
 ### Subscriptions and payments (Chapa)
 
@@ -220,16 +224,30 @@ GET callback, and both funnel into `HandleWebhookAsync`, which must stay **idemp
   documents at 5 MB and `.pdf .doc .docx`.
 - API versioning is URL-segment based (`api/v1/...`), default 1.0. Scalar UI is exposed in Development **and
   Production**. CORS is `AllowAnyOrigin`.
-- Serilog writes to console and `logs/easyfind_api_log.txt` at minimum level **Warning** — lower it when
-  debugging.
+- Serilog writes to console and `logs/easyfind_api_log.txt` at **Information**, with `Microsoft`, `System`
+  and EF Core overridden to `Warning` so request noise doesn't bury application logs.
 - `Nullable` is **disabled** in `EasyFind.Api` but enabled in both test projects.
 
-### Validation
+### Validation and error shape
 
-FluentValidation validators exist in `Validators/` (`CreateListingValidator`, `UpdateListingValidator`,
-`OnboardingValidator`) but are **not registered in DI and never invoked** — nothing calls them today. If you
-add validation, either wire up `AddValidatorsFromAssembly` plus an auto-validation filter, or validate
-explicitly in the handler and return `Result.Validation(...)`.
+**Every failure uses the `ApiResponse` envelope.** Three things had to be aligned for that:
+
+- `HandleResult` for handler failures (the `Result`/`ErrorType` path).
+- `ApiBehaviorOptions.InvalidModelStateResponseFactory` for DataAnnotation failures — `[ApiController]`
+  answers those with `ProblemDetails` by default, which was a second shape.
+- `GlobalExceptionHandler` (`IExceptionHandler`) for anything unhandled, which was a third. The message is
+  generic on purpose; the detail goes to the log so an exception can't leak internals. Note
+  `UseExceptionHandler()` will not start without `AddProblemDetails()` registered as a fallback, even though
+  the handler always handles.
+
+FluentValidation validators in `Validators/` are registered by hand in `AddInfrastructure` and enforced by
+`ValidationFilter` on every action. A DTO with no registered validator passes through untouched, so adding
+validation is opt-in: write the validator, add one line, done.
+
+`ListingRules<T>` holds the rules shared by create and update. It's generic because `UpdateListingDto`
+derives from `CreateListingDto` and the filter resolves `IValidator<T>` **by exact type** — a validator typed
+to the base is never found for the derived DTO. Only `CreateListingValidator` rejects a deadline in the past:
+inheriting that on update would make an expired listing uneditable, including to take it down.
 
 ## Tests
 

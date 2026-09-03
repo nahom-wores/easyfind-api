@@ -8,10 +8,10 @@ namespace EasyFind.Api.Features.Listings.Commands;
 
 public sealed record RestoreListingCommand(Guid ListingId);
 
-// Admin un-deletes a soft-deleted listing by clearing DeletedAt.
+// Admin brings a withdrawn listing back by clearing DeletedAt.
 //
-// Note this only does something once DeleteListingHandler actually soft-deletes;
-// today it hard-deletes, so there is never a row left to restore.
+// Deliberately does NOT set IsActive: restoring makes the listing manageable
+// again, publishing it is a separate decision made with PATCH .../active.
 public class RestoreListingHandler(
     ApplicationDbContext db,
     ListingAuthorizationService listings,

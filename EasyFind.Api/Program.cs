@@ -17,6 +17,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
@@ -228,8 +229,15 @@ static string ClientIpOf(HttpContext context) =>
 
 #region Logging Config
 
-// Log configuration using Serilog
-Log.Logger = new LoggerConfiguration().MinimumLevel.Warning()
+// Information, not Warning: at Warning the log says nothing about what the API
+// was doing before a problem, which is exactly the context needed to diagnose
+// one. Framework namespaces stay at Warning so request noise does not bury it.
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore", Serilog.Events.LogEventLevel.Warning)
+    .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
+    .Enrich.FromLogContext()
     .WriteTo.Console()
     .WriteTo.File("logs/easyfind_api_log.txt", rollingInterval: RollingInterval.Day)
     .CreateLogger();
@@ -258,10 +266,39 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddHttpContextAccessor();
 
-builder.Services.AddControllers().AddJsonOptions(options =>
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
+// UseExceptionHandler() refuses to start without a fallback registered, even
+// when a handler always handles. GlobalExceptionHandler returns true for every
+// exception, so this fallback is unreachable in practice — it exists to satisfy
+// the middleware and to leave something sane if the handler itself ever throws.
+builder.Services.AddProblemDetails();
+
+builder.Services.AddControllers(options =>
+{
+    // Enforces the FluentValidation validators registered in AddLifetimeServices.
+    options.Filters.Add<ValidationFilter>();
+}).AddJsonOptions(options =>
 {
     //Ignore circular reference
     options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+});
+
+// [ApiController] answers a DataAnnotation failure with ProblemDetails by
+// default, which is a third response shape on top of ApiResponse and the
+// exception handler's. Same envelope as everything else instead.
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var response = new ApiResponse { IsSuccess = false };
+        foreach (var error in context.ModelState.Values.SelectMany(v => v.Errors))
+            response.Errors.Add(string.IsNullOrWhiteSpace(error.ErrorMessage)
+                ? "Invalid request."
+                : error.ErrorMessage);
+
+        return new BadRequestObjectResult(response);
+    };
 });
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi(options => { options.AddDocumentTransformer<BearerSecuritySchemeTransformer>(); });
@@ -373,6 +410,9 @@ using (var scope = app.Services.CreateScope())
             await roleManager.CreateAsync(new IdentityRole(role));
     }
 }
+
+// First in the pipeline, so it catches anything thrown further down.
+app.UseExceptionHandler();
 
 // Must run before anything that reads the client IP — the rate limiter above all.
 if (app.Configuration.GetValue("BehindReverseProxy", false))

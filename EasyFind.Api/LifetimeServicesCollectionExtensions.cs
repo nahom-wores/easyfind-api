@@ -1,4 +1,4 @@
-using EasyFind.Api.Features.Admin.Commands;
+﻿using EasyFind.Api.Features.Admin.Commands;
 using EasyFind.Api.Features.Admin.Queries;
 using EasyFind.Api.Features.Applications.Commands;
 using EasyFind.Api.Features.Applications.Queries;
@@ -15,6 +15,10 @@ using EasyFind.Api.Features.Subscriptions.Commands;
 using EasyFind.Api.Features.Subscriptions.Queries;
 using EasyFind.Api.Features.Users.Commands;
 using EasyFind.Api.Features.Users.Queries;
+using EasyFind.Api.Models.Dto.Listings;
+using EasyFind.Api.Models.Dto.Profile;
+using EasyFind.Api.Validators;
+using FluentValidation;
 using EasyFind.Api.Services;
 using EasyFind.Api.Services.IServices;
 using EasyFind.Api.Services.Jobs;
@@ -65,6 +69,13 @@ public static class LifetimeServicesCollectionExtensions
         services.AddScoped<IChapaWebhookVerifier, ChapaWebhookVerifier>();
         services.AddScoped<ICurrentUser, CurrentUser>();         // claims of the caller
         services.AddScoped<IOtpThrottle, OtpThrottleService>();  // per-phone OTP limits
+
+        // Request validators, enforced by ValidationFilter. Registered by hand
+        // like everything else: a DTO with no validator here is simply not
+        // validated beyond its DataAnnotations.
+        services.AddScoped<IValidator<CreateListingDto>, CreateListingValidator>();
+        services.AddScoped<IValidator<UpdateListingDto>, UpdateListingValidator>();
+        services.AddScoped<IValidator<OnboardingDto>, OnboardingValidator>();
         services.AddScoped<SubscriptionGate>();                  // free-vs-paid policy
         services.AddScoped<SubscriptionExpiryJob>();             // nightly Hangfire job
 
