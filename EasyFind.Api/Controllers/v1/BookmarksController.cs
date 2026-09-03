@@ -21,7 +21,7 @@ public class BookmarksController : ApiControllerBase
         if (page < 1) page = 1;
         if (pageSize is < 1 or > 50) pageSize = 20;
 
-        return HandleResult(await handler.HandleAsync(UserId, page, pageSize, ct));
+        return HandleResult(await handler.HandleAsync(new GetUserBookmarksQuery(UserId, page, pageSize), ct));
     }
 
     [HttpPost("{listingId:guid}")]
@@ -29,12 +29,12 @@ public class BookmarksController : ApiControllerBase
         Guid listingId,
         [FromServices] AddBookmarkHandler handler,
         CancellationToken ct)
-        => HandleResult(await handler.HandleAsync(UserId, listingId, ct));
+        => HandleResult(await handler.HandleAsync(new AddBookmarkCommand(UserId, listingId), ct));
 
     [HttpDelete("{listingId:guid}")]
     public async Task<ActionResult<ApiResponse>> Remove(
         Guid listingId,
         [FromServices] RemoveBookmarkHandler handler,
         CancellationToken ct)
-        => HandleResult(await handler.HandleAsync(UserId, listingId, ct));
+        => HandleResult(await handler.HandleAsync(new RemoveBookmarkCommand(UserId, listingId), ct));
 }

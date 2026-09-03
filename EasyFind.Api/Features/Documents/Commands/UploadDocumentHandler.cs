@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.Documents;
 using EasyFind.Api.Models.Options;
@@ -8,6 +8,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace EasyFind.Api.Features.Documents.Commands;
+
+public sealed record UploadDocumentCommand(string UserId, IFormFile File, DocumentType Type);
 
 // Upload a CV or supporting document.
 //
@@ -27,9 +29,9 @@ public class UploadDocumentHandler(
     private static readonly byte[] ZipMagic = [0x50, 0x4B, 0x03, 0x04]; // docx is a zip
     private static readonly byte[] DocMagic = [0xD0, 0xCF, 0x11, 0xE0]; // legacy .doc
 
-    public async Task<Result<DocumentDtos.DocumentResponseDto>> HandleAsync(
-        string userId, IFormFile file, DocumentType type, CancellationToken ct = default)
+    public async Task<Result<DocumentDtos.DocumentResponseDto>> HandleAsync(UploadDocumentCommand command, CancellationToken ct = default)
     {
+        var (userId, file, type) = command;
         if (file.Length == 0)
             return Result<DocumentDtos.DocumentResponseDto>.Validation("File is empty.");
 

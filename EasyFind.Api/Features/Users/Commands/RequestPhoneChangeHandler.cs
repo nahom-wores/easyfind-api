@@ -1,10 +1,14 @@
-﻿using EasyFind.Api.Models.Auth;
+using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.UserDto;
 using EasyFind.Api.Services.IServices;
 using Microsoft.AspNetCore.Identity;
 
 namespace EasyFind.Api.Features.Users.Commands;
+
+// The number the user wants to move to. Nothing is stored: the OTP itself
+// carries the binding to this number.
+public sealed record RequestPhoneChangeCommand(string UserId, UpdateUserPhoneNumberDto NewNumber);
 
 // Step 1 of changing the login phone number: send an OTP to the NEW number.
 //
@@ -19,9 +23,9 @@ public class RequestPhoneChangeHandler(
     ISmsService smsService,
     ILogger<RequestPhoneChangeHandler> logger)
 {
-    public async Task<Result> HandleAsync(
-        string userId, UpdateUserPhoneNumberDto dto, CancellationToken ct = default)
+    public async Task<Result> HandleAsync(RequestPhoneChangeCommand command, CancellationToken ct = default)
     {
+        var (userId, dto) = command;
         var newPhone = PhoneNumberRules.Normalize(dto.PhoneNumber);
         if (string.IsNullOrWhiteSpace(newPhone))
             return Result.Validation("A phone number is required.");

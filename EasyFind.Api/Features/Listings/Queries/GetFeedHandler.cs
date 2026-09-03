@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Extensions;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.Listings;
@@ -9,6 +9,9 @@ using EasyFind.Api.Services.IServices;
 using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Listings.Queries;
+
+// Whose feed, and which page/filters of it.
+public sealed record GetFeedQuery(string UserId, FeedRequestDto Request);
 
 // The personalized feed — the core read of the product.
 //
@@ -34,9 +37,9 @@ public class GetFeedHandler(
 
     private static readonly TimeSpan CacheFor = TimeSpan.FromMinutes(5);
 
-    public async Task<Result<PagedResult<ListingFeedItemDto>>> HandleAsync(
-        string userId, FeedRequestDto request, CancellationToken ct = default)
+    public async Task<Result<PagedResult<ListingFeedItemDto>>> HandleAsync(GetFeedQuery query, CancellationToken ct = default)
     {
+        var (userId, request) = query;
         // Tier drives the free-tier result cap, and is part of the cache key so
         // a free and a paid user can never share a cached page.
         var tier = await db.Users

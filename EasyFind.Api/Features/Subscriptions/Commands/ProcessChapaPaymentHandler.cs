@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.Subscriptions;
@@ -10,6 +10,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace EasyFind.Api.Features.Subscriptions.Commands;
+
+// The Chapa reference for the payment to settle. Arrives from both the webhook
+// and the browser callback, hence the idempotency requirement below.
+public sealed record ProcessChapaPaymentCommand(string TxRef);
 
 // Settles a Chapa payment and activates the subscription.
 //
@@ -29,9 +33,10 @@ public class ProcessChapaPaymentHandler(
 {
     private readonly SubscriptionOptions _opts = subOptions.Value;
 
-    public async Task<Result> HandleAsync(string txRef, CancellationToken ct = default)
+    public async Task<Result> HandleAsync(ProcessChapaPaymentCommand command, CancellationToken ct = default)
     
     {
+        var txRef = command.TxRef;
         // 1. Find the payment by tx_ref
         var payment = await db.Payments.FirstOrDefaultAsync(p => p.TxRef == txRef, ct);
         if (payment == null)

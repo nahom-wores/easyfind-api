@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Models.Admin;
 using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Dto.Common;
@@ -7,14 +7,17 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Admin.Queries;
 
+public sealed record GetUserDetailQuery(string UserId);
+
 // One user, everything about them: roles, profile, subscription, activity
 // counts and recent payments. Several small queries rather than one big join.
 public class GetUserDetailHandler(
     ApplicationDbContext db,
     UserManager<ApplicationUser> userManager)
 {
-    public async Task<Result<AdminUserDetailDto>> HandleAsync(string userId, CancellationToken ct = default)
+    public async Task<Result<AdminUserDetailDto>> HandleAsync(GetUserDetailQuery query, CancellationToken ct = default)
     {
+        var userId = query.UserId;
          var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
             if (user == null) return Result<AdminUserDetailDto>.NotFound("User not found.");
 

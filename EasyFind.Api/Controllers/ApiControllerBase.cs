@@ -13,6 +13,17 @@ public class ApiControllerBase : ControllerBase
         User.FindFirstValue(ClaimTypes.NameIdentifier)
         ?? throw new UnauthorizedAccessException("User ID claim is missing.");
 
+    // 429 in the same envelope as every other response, with Retry-After so the
+    // client can say how long rather than guessing.
+    protected ActionResult<ApiResponse> TooManyRequests(TimeSpan retryAfter, string message)
+    {
+        Response.Headers.RetryAfter = ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString();
+
+        var response = new ApiResponse { IsSuccess = false };
+        response.Errors.Add(message);
+        return StatusCode(StatusCodes.Status429TooManyRequests, response);
+    }
+
     // Map a Result<T> to a consistent ApiResponse + status code
     protected ActionResult<ApiResponse> HandleResult<T>(Result<T> result)
     {

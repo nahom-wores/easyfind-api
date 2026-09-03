@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using Asp.Versioning;
 using EasyFind.Api.Features.Documents.Commands;
 using EasyFind.Api.Features.Documents.Queries;
@@ -29,7 +29,7 @@ public class DocumentsController : ApiControllerBase
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
         if (file is null) return HandleResult(Result<object>.Validation("No file provided."));
 
-        return HandleResult(await handler.HandleAsync(userId, file, type, ct));
+        return HandleResult(await handler.HandleAsync(new UploadDocumentCommand(userId, file, type), ct));
     }
 
     [HttpGet]
@@ -39,7 +39,7 @@ public class DocumentsController : ApiControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
-        return HandleResult(await handler.HandleAsync(userId, ct));
+        return HandleResult(await handler.HandleAsync(new GetUserDocumentsQuery(userId), ct));
     }
 
     [HttpGet("{documentId:guid}/download")]
@@ -50,7 +50,7 @@ public class DocumentsController : ApiControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
-        return HandleResult(await handler.HandleAsync(userId, documentId, ct));
+        return HandleResult(await handler.HandleAsync(new GetDocumentDownloadUrlQuery(userId, documentId), ct));
     }
 
     [HttpDelete("{documentId:guid}")]
@@ -61,6 +61,6 @@ public class DocumentsController : ApiControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
-        return HandleResult(await handler.HandleAsync(userId, documentId, ct), "Document deleted.");
+        return HandleResult(await handler.HandleAsync(new DeleteDocumentCommand(userId, documentId), ct), "Document deleted.");
     }
 }

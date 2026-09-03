@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Features.Listings;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.Listings;
@@ -8,15 +8,17 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Applications.Commands;
 
+public sealed record CreateApplicationCommand(string UserId, CreateApplicationDto Application);
+
 // Start tracking an application against a listing. Paid feature.
 public class CreateApplicationHandler(
     ApplicationDbContext db,
     ListingAuthorizationService listings,
     SubscriptionGate gate)
 {
-    public async Task<Result<ApplicationItemDto>> HandleAsync(
-        string userId, CreateApplicationDto dto, CancellationToken ct = default)
+    public async Task<Result<ApplicationItemDto>> HandleAsync(CreateApplicationCommand command, CancellationToken ct = default)
     {
+        var (userId, dto) = command;
         var tier = await db.Users.AsNoTracking()
             .Where(u => u.Id == userId).Select(u => u.SubscriptionTier)
             .FirstOrDefaultAsync(ct);

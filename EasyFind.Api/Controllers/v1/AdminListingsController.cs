@@ -1,4 +1,4 @@
-﻿using Asp.Versioning;
+using Asp.Versioning;
 using EasyFind.Api.Features.Listings.Commands;
 using EasyFind.Api.Features.Listings.Queries;
 using EasyFind.Api.Models.Dto.Common;
@@ -29,7 +29,7 @@ public class AdminListingsController : ApiControllerBase
         if (filter.Page < 1) filter.Page = 1;
         if (filter.PageSize is < 1 or > 100) filter.PageSize = 20;
 
-        return HandleResult(await handler.HandleAsync(filter, ct));
+        return HandleResult(await handler.HandleAsync(new ListAdminListingsQuery(filter), ct));
     }
 
     [HttpGet("{id:guid}")]
@@ -37,14 +37,14 @@ public class AdminListingsController : ApiControllerBase
         Guid id,
         [FromServices] GetAdminListingHandler handler,
         CancellationToken ct)
-        => HandleResult(await handler.HandleAsync(id, ct));
+        => HandleResult(await handler.HandleAsync(new GetAdminListingQuery(id), ct));
 
     [HttpPost]
     public async Task<ActionResult<ApiResponse>> Create(
         [FromBody] CreateListingDto dto,
         [FromServices] CreateListingHandler handler,
         CancellationToken ct)
-        => HandleResult(await handler.HandleAsync(dto, ct));
+        => HandleResult(await handler.HandleAsync(new CreateListingCommand(dto), ct));
 
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<ApiResponse>> Update(
@@ -52,21 +52,21 @@ public class AdminListingsController : ApiControllerBase
         [FromBody] UpdateListingDto dto,
         [FromServices] UpdateListingHandler handler,
         CancellationToken ct)
-        => HandleResult(await handler.HandleAsync(id, dto, ct));
+        => HandleResult(await handler.HandleAsync(new UpdateListingCommand(id, dto), ct));
 
     [HttpDelete("{id:guid}")]
     public async Task<ActionResult<ApiResponse>> Delete(
         Guid id,
         [FromServices] DeleteListingHandler handler,
         CancellationToken ct)
-        => HandleResult(await handler.HandleAsync(id, ct), "Listing deleted.");
+        => HandleResult(await handler.HandleAsync(new DeleteListingCommand(id), ct), "Listing deleted.");
 
     [HttpPost("{id:guid}/restore")]
     public async Task<ActionResult<ApiResponse>> Restore(
         Guid id,
         [FromServices] RestoreListingHandler handler,
         CancellationToken ct)
-        => HandleResult(await handler.HandleAsync(id, ct), "Listing restored.");
+        => HandleResult(await handler.HandleAsync(new RestoreListingCommand(id), ct), "Listing restored.");
 
     [HttpPatch("{id:guid}/active")]
     public async Task<ActionResult<ApiResponse>> SetActive(
@@ -74,7 +74,7 @@ public class AdminListingsController : ApiControllerBase
         [FromQuery] bool isActive,
         [FromServices] SetListingActiveHandler handler,
         CancellationToken ct)
-        => HandleResult(await handler.HandleAsync(id, isActive, ct), "Status updated.");
+        => HandleResult(await handler.HandleAsync(new SetListingActiveCommand(id, isActive), ct), "Status updated.");
 
     [HttpPost("{id:guid}/image")]
     public async Task<ActionResult<ApiResponse>> UploadImage(
@@ -82,5 +82,5 @@ public class AdminListingsController : ApiControllerBase
         IFormFile file,
         [FromServices] UploadListingImageHandler handler,
         CancellationToken ct)
-        => HandleResult(await handler.HandleAsync(id, file, ct));
+        => HandleResult(await handler.HandleAsync(new UploadListingImageCommand(id, file), ct));
 }

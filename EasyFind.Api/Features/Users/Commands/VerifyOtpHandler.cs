@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.UserDto;
@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Users.Commands;
+
+public sealed record VerifyOtpCommand(VerifyOTPRequestDto Verification);
 
 // Step 2 of sign-in: check the OTP and issue tokens.
 //
@@ -22,8 +24,9 @@ public class VerifyOtpHandler(
     ITokenService tokenService,
     ILogger<VerifyOtpHandler> logger)
 {
-    public async Task<TokenDto> HandleAsync(VerifyOTPRequestDto verifyOTPRequestDTO)
+    public async Task<TokenDto> HandleAsync(VerifyOtpCommand command)
     {
+        var verifyOTPRequestDTO = command.Verification;
         try
         {
             var user = await db.ApplicationUsers.FirstOrDefaultAsync(x =>

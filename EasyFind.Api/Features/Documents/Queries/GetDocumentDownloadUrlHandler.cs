@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.Documents;
 using EasyFind.Api.Services.IServices;
@@ -6,15 +6,17 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Documents.Queries;
 
+public sealed record GetDocumentDownloadUrlQuery(string UserId, Guid DocumentId);
+
 // Hands back a time-limited URL rather than the file itself — documents are
 // private, so the storage key never leaves the server.
 public class GetDocumentDownloadUrlHandler(
     ApplicationDbContext db,
     IStorageService storage)
 {
-    public async Task<Result<DocumentDtos.DocumentWithUrlDto>> HandleAsync(
-        string userId, Guid documentId, CancellationToken ct = default)
+    public async Task<Result<DocumentDtos.DocumentWithUrlDto>> HandleAsync(GetDocumentDownloadUrlQuery query, CancellationToken ct = default)
     {
+        var (userId, documentId) = query;
         // Ownership enforced in the query — a wrong user gets NotFound, not the file.
         var doc = await db.UserDocuments
             .AsNoTracking()

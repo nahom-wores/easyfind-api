@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.Subscriptions;
@@ -11,6 +11,8 @@ using Microsoft.Extensions.Options;
 
 namespace EasyFind.Api.Features.Subscriptions.Commands;
 
+public sealed record InitiateSubscriptionCommand(string UserId, SubscriptionTier Tier);
+
 // Starts a Chapa checkout. The pending Payment row is written BEFORE we
 // call Chapa, so a webhook that arrives first still finds something to settle.
 public class InitiateSubscriptionHandler(
@@ -21,9 +23,9 @@ public class InitiateSubscriptionHandler(
 {
     private readonly SubscriptionOptions _opts = subOptions.Value;
 
-    public async Task<Result<CheckoutResponseDto>> HandleAsync(string userId, SubscriptionTier tier,
-        CancellationToken ct = default)
+    public async Task<Result<CheckoutResponseDto>> HandleAsync(InitiateSubscriptionCommand command, CancellationToken ct = default)
     {
+        var (userId, tier) = command;
         if (tier == SubscriptionTier.Free)
             return Result<CheckoutResponseDto>.Validation("Cannot purchase the Free tier.");
 

@@ -1,10 +1,12 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Extensions;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Services.IServices;
 using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Listings.Commands;
+
+public sealed record DeleteListingCommand(Guid ListingId);
 
 // Admin removes a listing.
 //
@@ -20,8 +22,9 @@ public class DeleteListingHandler(
     ListingAuthorizationService listings,
     IRedisCacheService cache)
 {
-    public async Task<Result> HandleAsync(Guid id, CancellationToken ct = default)
+    public async Task<Result> HandleAsync(DeleteListingCommand command, CancellationToken ct = default)
     {
+        var id = command.ListingId;
         var listing = await listings.ManageableListings()
             .FirstOrDefaultAsync(l => l.Id == id, ct);
 

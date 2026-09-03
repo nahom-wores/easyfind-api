@@ -1,4 +1,4 @@
-﻿using Asp.Versioning;
+using Asp.Versioning;
 using EasyFind.Api.Features.Listings.Queries;
 using EasyFind.Api.Models.Dto.Common;
 using Microsoft.AspNetCore.Authorization;
@@ -18,5 +18,5 @@ public class ListingsController : ApiControllerBase
         Guid id,
         [FromServices] GetListingDetailHandler handler,
         CancellationToken ct)
-        => HandleResult(await handler.HandleAsync(id, UserId, ct));
+        => HandleResult(await handler.HandleAsync(new GetListingDetailQuery(id, UserId), ct));
 }

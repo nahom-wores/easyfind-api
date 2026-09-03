@@ -1,4 +1,4 @@
-﻿using Asp.Versioning;
+using Asp.Versioning;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Net;
@@ -25,17 +25,29 @@ namespace EasyFind.Api.Controllers.v1;
 [ApiVersion("1.0")]
 public class AuthController(ITokenService tokenService) : ApiControllerBase
 {
-    //[EnableRateLimiting("auth")]
+    // Two limits guard this: per client IP here, and per destination phone
+    // number in IOtpThrottle. Both are needed — the caller chooses the phone
+    // number, so a per-phone limit alone is bypassed by rotating numbers, while
+    // a per-IP limit alone lets a botnet bomb one victim.
+    [EnableRateLimiting("otp-send")]
     [HttpPost("request-otp")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<ApiResponse>> SignIn(
         [FromBody] LogInRequestDto model,
-        [FromServices] RequestOtpHandler handler)
+        [FromServices] RequestOtpHandler handler,
+        [FromServices] IOtpThrottle throttle,
+        CancellationToken ct)
     {
         var response = new ApiResponse();
 
-        var userDto = await handler.HandleAsync(model);
+        var gate = await throttle.TryConsumeSendAsync(model.PhoneNumber, ct);
+        if (!gate.Allowed)
+            return TooManyRequests(gate.RetryAfter,
+                "Too many codes requested for this number. Please try again later.");
+
+        var userDto = await handler.HandleAsync(new RequestOtpCommand(model));
 
         if (!userDto.IsSuccess)
         {
@@ -50,22 +62,41 @@ public class AuthController(ITokenService tokenService) : ApiControllerBase
         return StatusCode((int)HttpStatusCode.Created, response);
     }
 
-    // [EnableRateLimiting("otp")]
+    // A 6-digit code with unlimited guesses is an oracle, so failures are
+    // counted per phone number and lock it out for a cooldown.
+    [EnableRateLimiting("otp-verify")]
     [HttpPost("verify-otp")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<ApiResponse>> VerifyOtp(
         [FromBody] VerifyOTPRequestDto model,
-        [FromServices] VerifyOtpHandler handler)
+        [FromServices] VerifyOtpHandler handler,
+        [FromServices] IOtpThrottle throttle,
+        CancellationToken ct)
     {
         var response = new ApiResponse();
-        var verificationDto = await handler.HandleAsync(model);
+
+        // Checked before the code is examined, so a locked-out number is refused
+        // even when the code offered happens to be right.
+        var gate = await throttle.CheckVerifyAllowedAsync(model.PhoneNumber, ct);
+        if (!gate.Allowed)
+            return TooManyRequests(gate.RetryAfter,
+                "Too many incorrect codes. Please try again later.");
+
+        var verificationDto = await handler.HandleAsync(new VerifyOtpCommand(model));
         if (!verificationDto.IsSuccess)
         {
+            await throttle.RecordFailedVerificationAsync(model.PhoneNumber, ct);
+
             response.IsSuccess = false;
             response.Errors.Add($"{verificationDto.Message}");
             return BadRequest(response);
         }
+
+        // Signed in successfully — clear any strikes against the number.
+        await throttle.ResetVerificationFailuresAsync(model.PhoneNumber, ct);
+
         response.IsSuccess = true;
         response.Result = verificationDto;
         return Ok(response);
@@ -131,7 +162,7 @@ public class AuthController(ITokenService tokenService) : ApiControllerBase
         var response = new ApiResponse();
         try
         {
-            await handler.HandleAsync(tokenDto);
+            await handler.HandleAsync(new LogoutCommand(tokenDto));
 
             response.IsSuccess = true;
             response.Result = "Logged out successfully";
@@ -154,7 +185,7 @@ public class AuthController(ITokenService tokenService) : ApiControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-        return HandleResult(await handler.HandleAsync(userId, ct));
+        return HandleResult(await handler.HandleAsync(new GetCurrentUserQuery(userId), ct));
     }
 
     // PUT api/v1/auth/me — edit name. Phone and email are not editable here;
@@ -169,7 +200,7 @@ public class AuthController(ITokenService tokenService) : ApiControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-        return HandleResult(await handler.HandleAsync(userId, dto, ct));
+        return HandleResult(await handler.HandleAsync(new UpdateCurrentUserCommand(userId, dto), ct));
     }
 
     // POST api/v1/auth/me/picture — replace the avatar
@@ -185,7 +216,7 @@ public class AuthController(ITokenService tokenService) : ApiControllerBase
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
         if (image is null) return HandleResult(Result<object>.Validation("No image provided."));
 
-        return HandleResult(await handler.HandleAsync(userId, image, ct));
+        return HandleResult(await handler.HandleAsync(new UpdateProfilePictureCommand(userId, image), ct));
     }
 
     // ── Changing the login phone number (two steps) ──────────────────────────
@@ -194,17 +225,27 @@ public class AuthController(ITokenService tokenService) : ApiControllerBase
     // step 2 sends that code back with the same number.
 
     // POST api/v1/auth/me/phone/request-otp
+    // Throttled per destination number as well as per IP: this endpoint also
+    // sends billable SMS to a number the caller chooses.
+    [EnableRateLimiting("otp-send")]
     [HttpPost("me/phone/request-otp")]
     [Authorize]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<ApiResponse>> RequestPhoneChange(
         [FromBody] UpdateUserPhoneNumberDto dto,
         [FromServices] RequestPhoneChangeHandler handler,
+        [FromServices] IOtpThrottle throttle,
         CancellationToken ct)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-        return HandleResult(await handler.HandleAsync(userId, dto, ct),
+        var gate = await throttle.TryConsumeSendAsync(dto.PhoneNumber, ct);
+        if (!gate.Allowed)
+            return TooManyRequests(gate.RetryAfter,
+                "Too many codes requested for this number. Please try again later.");
+
+        return HandleResult(await handler.HandleAsync(new RequestPhoneChangeCommand(userId, dto), ct),
             "Verification code sent to the new number.");
     }
 
@@ -219,7 +260,7 @@ public class AuthController(ITokenService tokenService) : ApiControllerBase
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-        return HandleResult(await handler.HandleAsync(userId, dto, ct));
+        return HandleResult(await handler.HandleAsync(new ConfirmPhoneChangeCommand(userId, dto), ct));
     }
 
     // POST api/v1/auth/assign-role
@@ -229,5 +270,5 @@ public class AuthController(ITokenService tokenService) : ApiControllerBase
         [FromBody] AssignRoleDto dto,
         [FromServices] AssignRoleHandler handler,
         CancellationToken ct)
-        => HandleResult(await handler.HandleAsync(dto, ct), $"Assigned role: {dto.Role}");
+        => HandleResult(await handler.HandleAsync(new AssignRoleCommand(dto), ct), $"Assigned role: {dto.Role}");
 }

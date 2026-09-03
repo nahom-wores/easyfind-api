@@ -1,10 +1,12 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Extensions;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Services.IServices;
 using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Listings.Commands;
+
+public sealed record RestoreListingCommand(Guid ListingId);
 
 // Admin un-deletes a soft-deleted listing by clearing DeletedAt.
 //
@@ -15,8 +17,9 @@ public class RestoreListingHandler(
     ListingAuthorizationService listings,
     IRedisCacheService cache)
 {
-    public async Task<Result> HandleAsync(Guid id, CancellationToken ct = default)
+    public async Task<Result> HandleAsync(RestoreListingCommand command, CancellationToken ct = default)
     {
+        var id = command.ListingId;
         var listing = await listings.ManageableListings()
             .FirstOrDefaultAsync(l => l.Id == id, ct);
 

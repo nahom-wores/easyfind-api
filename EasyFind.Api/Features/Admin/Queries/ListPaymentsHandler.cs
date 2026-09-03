@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Models.Admin;
 using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Dto.Common;
@@ -7,22 +7,24 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Admin.Queries;
 
+public sealed record ListPaymentsQuery(AdminPaymentFilterDto Filter);
+
 // The admin payments table, newest first, optionally filtered by status.
 public class ListPaymentsHandler(ApplicationDbContext db)
 {
-    public async Task<Result<PagedResult<AdminPaymentListItemDto>>> HandleAsync(AdminPaymentFilterDto filter,
-        CancellationToken ct = default)
+    public async Task<Result<PagedResult<AdminPaymentListItemDto>>> HandleAsync(ListPaymentsQuery query, CancellationToken ct = default)
     {
-        var query = db.Payments.AsNoTracking();
+        var filter = query.Filter;
+        var payments = db.Payments.AsNoTracking();
 
         if (filter.Status.HasValue)
-            query = query.Where(p => (int)p.Status == filter.Status.Value);
+            payments = payments.Where(p => (int)p.Status == filter.Status.Value);
 
-        query = query.OrderByDescending(p => p.CreatedAt);
+        payments = payments.OrderByDescending(p => p.CreatedAt);
 
-        var total = await query.CountAsync(ct);
+        var total = await payments.CountAsync(ct);
 
-        var items = await query
+        var items = await payments
             .Skip((filter.Page - 1) * filter.PageSize)
             .Take(filter.PageSize)
             .Select(p => new AdminPaymentListItemDto

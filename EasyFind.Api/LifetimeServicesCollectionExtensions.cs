@@ -64,6 +64,7 @@ public static class LifetimeServicesCollectionExtensions
         services.AddHttpClient<IChapaClient, ChapaClient>();     // payment gateway
         services.AddScoped<IChapaWebhookVerifier, ChapaWebhookVerifier>();
         services.AddScoped<ICurrentUser, CurrentUser>();         // claims of the caller
+        services.AddScoped<IOtpThrottle, OtpThrottleService>();  // per-phone OTP limits
         services.AddScoped<SubscriptionGate>();                  // free-vs-paid policy
         services.AddScoped<SubscriptionExpiryJob>();             // nightly Hangfire job
 

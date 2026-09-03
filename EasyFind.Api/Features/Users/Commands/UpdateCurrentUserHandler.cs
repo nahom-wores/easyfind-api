@@ -1,9 +1,11 @@
-﻿using EasyFind.Api.Models.Auth;
+using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.UserDto;
 using Microsoft.AspNetCore.Identity;
 
 namespace EasyFind.Api.Features.Users.Commands;
+
+public sealed record UpdateCurrentUserCommand(string UserId, UpdateUserProfileDto Details);
 
 // Edits the signed-in user's account record — the counterpart to
 // GetCurrentUserHandler behind PUT /auth/me.
@@ -12,9 +14,9 @@ namespace EasyFind.Api.Features.Users.Commands;
 // a different thing entirely and live in the Profile feature.
 public class UpdateCurrentUserHandler(UserManager<ApplicationUser> userManager)
 {
-    public async Task<Result<UserProfileDto>> HandleAsync(
-        string userId, UpdateUserProfileDto dto, CancellationToken ct = default)
+    public async Task<Result<UserProfileDto>> HandleAsync(UpdateCurrentUserCommand command, CancellationToken ct = default)
     {
+        var (userId, dto) = command;
         var user = await userManager.FindByIdAsync(userId);
         if (user is null)
             return Result<UserProfileDto>.NotFound("User not found.");

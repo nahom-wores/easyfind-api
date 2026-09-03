@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.UserDto;
@@ -8,12 +8,15 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Users.Commands;
 
+public sealed record AssignRoleCommand(AssignRoleDto Assignment);
+
 // Admin grants a role. Idempotent: re-assigning an existing role succeeds.
 // Stamps the security stamp so existing tokens pick the change up.
 public class AssignRoleHandler(UserManager<ApplicationUser> userManager)
 {
-    public async Task<Result> HandleAsync(AssignRoleDto dto, CancellationToken ct = default)
+    public async Task<Result> HandleAsync(AssignRoleCommand command, CancellationToken ct = default)
     {
+        var dto = command.Assignment;
         var user = await userManager.FindByIdAsync(dto.UserId);
         if (user == null)
             return Result.NotFound("User not found.");

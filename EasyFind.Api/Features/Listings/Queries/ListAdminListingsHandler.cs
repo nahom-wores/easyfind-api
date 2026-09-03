@@ -1,47 +1,49 @@
-﻿using EasyFind.Api.Models.Dto.Common;
+using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.Listings;
 using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Listings.Queries;
 
+public sealed record ListAdminListingsQuery(AdminListingFilterDto Filter);
+
 // The admin listing table: filter, search, page.
 public class ListAdminListingsHandler(ListingAuthorizationService listings)
 {
-    public async Task<Result<PagedResult<AdminListingDto>>> HandleAsync(
-        AdminListingFilterDto filter, CancellationToken ct = default)
+    public async Task<Result<PagedResult<AdminListingDto>>> HandleAsync(ListAdminListingsQuery query, CancellationToken ct = default)
     {
+        var filter = query.Filter;
         // Start from everything this admin may manage, then narrow.
-        var query = listings.ManageableListings().AsNoTracking();
+        var listingsQuery = listings.ManageableListings().AsNoTracking();
 
         // Soft-deleted rows are hidden unless explicitly requested.
         if (!filter.IncludeDeleted)
-            query = query.Where(l => l.DeletedAt == null);
+            listingsQuery = listingsQuery.Where(l => l.DeletedAt == null);
 
         if (filter.Type.HasValue)
-            query = query.Where(l => l.Type == filter.Type.Value);
+            listingsQuery = listingsQuery.Where(l => l.Type == filter.Type.Value);
 
         if (filter.IsActive.HasValue)
-            query = query.Where(l => l.IsActive == filter.IsActive.Value);
+            listingsQuery = listingsQuery.Where(l => l.IsActive == filter.IsActive.Value);
 
         if (!string.IsNullOrWhiteSpace(filter.CountryCode))
         {
             var cc = filter.CountryCode.ToUpperInvariant();
-            query = query.Where(l => l.CountryCode == cc);
+            listingsQuery = listingsQuery.Where(l => l.CountryCode == cc);
         }
 
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
             var term = filter.Search.Trim();
             // ILike is Postgres-only (case-insensitive LIKE).
-            query = query.Where(l =>
+            listingsQuery = listingsQuery.Where(l =>
                 EF.Functions.ILike(l.Title, $"%{term}%") ||
                 EF.Functions.ILike(l.Organization, $"%{term}%"));
         }
 
         // Count before paging, so TotalCount reflects the whole filtered set.
-        var totalCount = await query.CountAsync(ct);
+        var totalCount = await listingsQuery.CountAsync(ct);
 
-        var items = await query
+        var items = await listingsQuery
             .OrderByDescending(l => l.CreatedAt)
             .Skip((filter.Page - 1) * filter.PageSize)
             .Take(filter.PageSize)

@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Extensions;
 using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Dto.Common;
@@ -10,6 +10,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Profile.Commands;
 
+public sealed record UpsertProfileCommand(string UserId, OnboardingDto Profile);
+
 // Onboarding, and every later edit of it. Creates the profile on first call and
 // updates it thereafter — the client uses one endpoint for both.
 public class UpsertProfileHandler(
@@ -17,9 +19,9 @@ public class UpsertProfileHandler(
     UserManager<ApplicationUser> userManager,
     IRedisCacheService cache)
 {
-    public async Task<Result<ProfileResponseDto>> HandleAsync(
-        string userId, OnboardingDto dto, CancellationToken ct = default)
+    public async Task<Result<ProfileResponseDto>> HandleAsync(UpsertProfileCommand command, CancellationToken ct = default)
     {
+        var (userId, dto) = command;
         var user = await userManager.FindByIdAsync(userId);
         if (user is null) return Result<ProfileResponseDto>.NotFound("User not found.");
 

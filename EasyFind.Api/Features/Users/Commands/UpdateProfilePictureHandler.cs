@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Models.Auth;
+using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.UserDto;
 using EasyFind.Api.Services;
@@ -6,6 +6,8 @@ using EasyFind.Api.Services.IServices;
 using Microsoft.AspNetCore.Identity;
 
 namespace EasyFind.Api.Features.Users.Commands;
+
+public sealed record UpdateProfilePictureCommand(string UserId, IFormFile Image);
 
 // Replaces the signed-in user's avatar.
 //
@@ -16,9 +18,9 @@ public class UpdateProfilePictureHandler(
     UserManager<ApplicationUser> userManager,
     IImageService imageService)
 {
-    public async Task<Result<ProfilePictureDto>> HandleAsync(
-        string userId, IFormFile image, CancellationToken ct = default)
+    public async Task<Result<ProfilePictureDto>> HandleAsync(UpdateProfilePictureCommand command, CancellationToken ct = default)
     {
+        var (userId, image) = command;
         // 1. Size / content-type, then magic bytes — the same checks the listing
         //    image endpoint applies. A .png extension proves nothing.
         var (ok, error) = ImageValidator.Validate(image);

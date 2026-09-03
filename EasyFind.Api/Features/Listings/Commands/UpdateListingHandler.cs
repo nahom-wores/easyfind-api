@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Extensions;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.Listings;
@@ -7,6 +7,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Listings.Commands;
 
+// Which listing, and the full corrected version of it.
+public sealed record UpdateListingCommand(Guid ListingId, UpdateListingDto Listing);
+
 // Admin edits a listing. The admin sends the full corrected listing, so every
 // editable field is overwritten.
 public class UpdateListingHandler(
@@ -14,9 +17,9 @@ public class UpdateListingHandler(
     ListingAuthorizationService listings,
     IRedisCacheService cache)
 {
-    public async Task<Result<AdminListingDto>> HandleAsync(
-        Guid id, UpdateListingDto dto, CancellationToken ct = default)
+    public async Task<Result<AdminListingDto>> HandleAsync(UpdateListingCommand command, CancellationToken ct = default)
     {
+        var (id, dto) = command;
         // ManageableListings() includes soft-deleted rows — an admin can fix a
         // listing before restoring it.
         var listing = await listings.ManageableListings()

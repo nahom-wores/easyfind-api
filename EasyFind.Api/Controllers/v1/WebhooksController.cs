@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.Json;
 using Asp.Versioning;
 using EasyFind.Api.Features.Subscriptions.Commands;
@@ -63,7 +63,7 @@ public class WebhooksController(
             }
 
             if (eventType == "charge.success" || status == "success")
-                await handler.HandleAsync(txRef, ct);
+                await handler.HandleAsync(new ProcessChapaPaymentCommand(txRef), ct);
             else
                 logger.LogInformation("Chapa webhook {TxRef} status {Status}, no action.", txRef, status);
 
@@ -100,7 +100,7 @@ public class WebhooksController(
 
         // Verify-in-handler is the real gate; we don't trust this status blindly.
         // Safe to call even if the webhook already processed — idempotent.
-        await handler.HandleAsync(reference, ct);
+        await handler.HandleAsync(new ProcessChapaPaymentCommand(reference), ct);
 
         return Ok();
     }

@@ -6,6 +6,8 @@ using EasyFind.Api.Models.Subscriptions;
 using EasyFind.Api.Models.Users;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 
 namespace EasyFind.Api.Data;
@@ -25,6 +27,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Payment> Payments { get; set; }
     public DbSet<UserDocument> UserDocuments { get; set; }
     public DbSet<AdminAction> AdminActions { get; set; }
+    public DbSet<OtpThrottle> OtpThrottles { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -78,16 +81,43 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             
             // Postgres array columns — List<T> maps to native arrays.
             // Enum lists need explicit int[] conversion.
-            entity.Property(p => p.PreferredJobCategories)
-                .HasConversion(
-                    v => v.Select(c => (int)c).ToArray(),
-                    v => v.Select(i => (JobCategory)i).ToList());
+            //
+            // int[] is Npgsql-specific: other providers try to compose it with
+            // their own collection-to-JSON converter and fail at model build.
+            // So the enum lists fall back to a comma-separated string elsewhere,
+            // which is what lets the integration tests run on SQLite.
+            //
+            // Fidelity note: those tests therefore exercise a different column
+            // encoding than production for these two properties only. Anything
+            // that depends on Postgres array semantics has to be tested against
+            // Postgres.
+            if (IsNpgsql)
+            {
+                entity.Property(p => p.PreferredJobCategories)
+                    .HasConversion(
+                        v => v.Select(c => (int)c).ToArray(),
+                        v => v.Select(i => (JobCategory)i).ToList());
 
-            entity.Property(p => p.PreferredScholarshipFields)
-                .HasConversion(
-                    v => v.Select(f => (int)f).ToArray(),
-                    v => v.Select(i => (ScholarshipField)i).ToList());
-            
+                entity.Property(p => p.PreferredScholarshipFields)
+                    .HasConversion(
+                        v => v.Select(f => (int)f).ToArray(),
+                        v => v.Select(i => (ScholarshipField)i).ToList());
+            }
+            else
+            {
+                entity.Property(p => p.PreferredJobCategories)
+                    .HasConversion(
+                        v => string.Join(',', v.Select(c => (int)c)),
+                        v => ParseEnumCsv<JobCategory>(v),
+                        EnumListComparer<JobCategory>());
+
+                entity.Property(p => p.PreferredScholarshipFields)
+                    .HasConversion(
+                        v => string.Join(',', v.Select(f => (int)f)),
+                        v => ParseEnumCsv<ScholarshipField>(v),
+                        EnumListComparer<ScholarshipField>());
+            }
+
             // TargetCountries is List<string> — maps to text[] natively,
             // no conversion needed.
         });
@@ -180,5 +210,60 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.HasOne(a => a.AdminUser).WithMany()
                 .HasForeignKey(a => a.AdminUserId).OnDelete(DeleteBehavior.Restrict);
         });
+
+        // ── OtpThrottle ──────────────────────────────────
+        modelBuilder.Entity<OtpThrottle>(entity =>
+        {
+            entity.HasKey(t => t.Id);
+
+            // One row per number, and the lookup key for every check.
+            // Required so the unique index actually constrains: Postgres allows
+            // any number of NULLs in a unique index.
+            entity.Property(t => t.PhoneNumber).IsRequired().HasMaxLength(32);
+            entity.HasIndex(t => t.PhoneNumber).IsUnique();
+        });
+
+        // ── Non-Postgres providers: make DateTimeOffset sortable ────────────
+        //
+        // SQLite cannot ORDER BY a DateTimeOffset, and the feed orders by
+        // CreatedAt, so the integration tests would fail on a limitation of the
+        // test database rather than on anything real. Storing them as a binary
+        // long keeps ordering correct there. Postgres is untouched.
+        if (!IsNpgsql)
+        {
+            // Set the converter on the property itself. Going through
+            // modelBuilder.Entity(clrType) would promote Identity's owned types
+            // (IdentityPasskeyData) into keyless entities and fail validation.
+            var toBinary = new DateTimeOffsetToBinaryConverter();
+
+            foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+            foreach (var property in entityType.GetProperties())
+            {
+                if (property.ClrType == typeof(DateTimeOffset) ||
+                    property.ClrType == typeof(DateTimeOffset?))
+                {
+                    property.SetValueConverter(toBinary);
+                }
+            }
+        }
     }
+
+    private bool IsNpgsql => Database.ProviderName == "Npgsql.EntityFrameworkCore.PostgreSQL";
+
+    // ── Non-Postgres fallbacks for the enum-array columns (see UserProfile) ──
+
+    private static List<T> ParseEnumCsv<T>(string value) where T : struct, Enum
+        => string.IsNullOrEmpty(value)
+            ? []
+            : value.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => (T)(object)int.Parse(s))
+                .ToList();
+
+    // Without an explicit comparer EF compares these lists by reference, and
+    // would miss in-place edits to a profile's preferences.
+    private static ValueComparer<List<T>> EnumListComparer<T>() where T : struct, Enum
+        => new(
+            (a, b) => a != null && b != null && a.SequenceEqual(b),
+            v => v.Aggregate(0, (hash, item) => HashCode.Combine(hash, item.GetHashCode())),
+            v => v.ToList());
 }

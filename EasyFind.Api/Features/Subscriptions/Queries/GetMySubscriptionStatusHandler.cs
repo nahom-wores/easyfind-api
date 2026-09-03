@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.Subscriptions;
@@ -11,13 +11,15 @@ using Microsoft.Extensions.Options;
 
 namespace EasyFind.Api.Features.Subscriptions.Queries;
 
+public sealed record GetMySubscriptionStatusQuery(string UserId);
+
 // What the client shows on the account screen. A user with no subscription
 // row is reported as Free rather than as an error.
 public class GetMySubscriptionStatusHandler(ApplicationDbContext db)
 {
-    public async Task<Result<SubscriptionStatusDto>> HandleAsync(string userId,
-        CancellationToken ct = default)
+    public async Task<Result<SubscriptionStatusDto>> HandleAsync(GetMySubscriptionStatusQuery query, CancellationToken ct = default)
     {
+        var userId = query.UserId;
         var sub = await db.Subscriptions
             .AsNoTracking()
             .Where(s => s.UserId == userId)

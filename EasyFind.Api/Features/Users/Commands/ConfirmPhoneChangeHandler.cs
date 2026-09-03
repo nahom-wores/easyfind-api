@@ -1,9 +1,11 @@
-﻿using EasyFind.Api.Models.Auth;
+using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.UserDto;
 using Microsoft.AspNetCore.Identity;
 
 namespace EasyFind.Api.Features.Users.Commands;
+
+public sealed record ConfirmPhoneChangeCommand(string UserId, ConfirmPhoneChangeDto Confirmation);
 
 // Step 2: verify the OTP and move the account onto the new number.
 //
@@ -18,9 +20,9 @@ public class ConfirmPhoneChangeHandler(
     UserManager<ApplicationUser> userManager,
     ILogger<ConfirmPhoneChangeHandler> logger)
 {
-    public async Task<Result<UserProfileDto>> HandleAsync(
-        string userId, ConfirmPhoneChangeDto dto, CancellationToken ct = default)
+    public async Task<Result<UserProfileDto>> HandleAsync(ConfirmPhoneChangeCommand command, CancellationToken ct = default)
     {
+        var (userId, dto) = command;
         var newPhone = PhoneNumberRules.Normalize(dto.PhoneNumber);
         if (string.IsNullOrWhiteSpace(newPhone) || string.IsNullOrWhiteSpace(dto.OTP))
             return Result<UserProfileDto>.Validation("Phone number and code are both required.");

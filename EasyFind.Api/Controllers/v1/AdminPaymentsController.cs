@@ -1,4 +1,4 @@
-﻿using Asp.Versioning;
+using Asp.Versioning;
 using EasyFind.Api.Features.Admin.Queries;
 using EasyFind.Api.Models.Admin;
 using EasyFind.Api.Models.Dto.Common;
@@ -21,6 +21,6 @@ public class AdminPaymentsController : ApiControllerBase
     {
         if (filter.Page < 1) filter.Page = 1;
         if (filter.PageSize is < 1 or > 100) filter.PageSize = 20;
-        return HandleResult(await handler.HandleAsync(filter, ct));
+        return HandleResult(await handler.HandleAsync(new ListPaymentsQuery(filter), ct));
     }
 }

@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Features.Listings;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.Listings;
@@ -7,18 +7,20 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Bookmarks.Queries;
 
+public sealed record GetUserBookmarksQuery(string UserId, int Page, int PageSize);
+
 // The user's saved listings, newest save first.
 public class GetUserBookmarksHandler(
     ApplicationDbContext db,
     ListingAuthorizationService listings)
 {
-    public async Task<Result<PagedResult<ListingFeedItemDto>>> HandleAsync(
-        string userId, int page, int pageSize, CancellationToken ct = default)
+    public async Task<Result<PagedResult<ListingFeedItemDto>>> HandleAsync(GetUserBookmarksQuery query, CancellationToken ct = default)
     {
+        var (userId, page, pageSize) = query;
         // Joined through the authorization service rather than the b.Listing
         // navigation property, so a withdrawn listing can't resurface here.
         // Inactive listings are kept — an expired job you saved stays visible.
-        var query = db.Bookmarks
+        var saved = db.Bookmarks
             .AsNoTracking()
             .Where(b => b.UserId == userId)
             .Join(listings.AuthorizedListings(activeOnly: false),
@@ -26,14 +28,14 @@ public class GetUserBookmarksHandler(
             .OrderByDescending(x => x.b.CreatedAt)
             .Select(x => x.l);
 
-        var totalCount = await query.CountAsync(ct);
+        var totalCount = await saved.CountAsync(ct);
 
-        var bookmarked = await query
+        var bookmarked = await saved
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);
 
-        // Application statuses for this page in one query, then O(1) lookups —
+        // Application statuses for this page in one saved, then O(1) lookups —
         // same N+1-avoidance pattern as the feed.
         var ids = bookmarked.Select(l => l.Id).ToList();
         var appStatuses = await db.UserApplications

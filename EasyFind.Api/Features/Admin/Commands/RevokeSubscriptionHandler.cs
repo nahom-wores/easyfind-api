@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Models.Admin;
 using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Dto.Admin;
@@ -9,6 +9,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Admin.Commands;
 
+// Same two-strings hazard as GrantSubscriptionCommand: name them, do not order them.
+public sealed record RevokeSubscriptionCommand(string AdminUserId, string TargetUserId, RevokeSubscriptionDto Revocation);
+
 // SuperAdmin cancels every active subscription for a user and drops them back
 // to Free. Also audited via AdminAction.
 public class RevokeSubscriptionHandler(
@@ -16,9 +19,9 @@ public class RevokeSubscriptionHandler(
     UserManager<ApplicationUser> userManager,
     ILogger<RevokeSubscriptionHandler> logger)
 {
-    public async Task<Result> HandleAsync(string adminUserId, string targetUserId,
-        RevokeSubscriptionDto dto, CancellationToken ct = default)
+    public async Task<Result> HandleAsync(RevokeSubscriptionCommand command, CancellationToken ct = default)
     {
+        var (adminUserId, targetUserId, dto) = command;
         var user = await userManager.FindByIdAsync(targetUserId);
         if (user == null) return Result.NotFound("User not found.");
 

@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Extensions;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.Listings;
@@ -7,6 +7,8 @@ using EasyFind.Api.Services.IServices;
 using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Listings.Commands;
+
+public sealed record UploadListingImageCommand(Guid ListingId, IFormFile File);
 
 // Admin attaches (or replaces) a listing's image.
 //
@@ -18,9 +20,9 @@ public class UploadListingImageHandler(
     IStorageService storage,
     IRedisCacheService cache)
 {
-    public async Task<Result<ListingImageDto>> HandleAsync(
-        Guid id, IFormFile file, CancellationToken ct = default)
+    public async Task<Result<ListingImageDto>> HandleAsync(UploadListingImageCommand command, CancellationToken ct = default)
     {
+        var (id, file) = command;
         // 1. Size / content-type check
         var (ok, error) = ImageValidator.Validate(file);
         if (!ok)

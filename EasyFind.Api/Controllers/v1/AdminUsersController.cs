@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using Asp.Versioning;
 using EasyFind.Api.Features.Admin.Commands;
 using EasyFind.Api.Features.Admin.Queries;
@@ -28,7 +28,7 @@ public class AdminUsersController : ApiControllerBase
         CancellationToken ct)
     {
         if (string.IsNullOrEmpty(AdminId)) return Unauthorized();
-        return HandleResult(await handler.HandleAsync(AdminId, userId, dto, ct), "Subscription granted.");
+        return HandleResult(await handler.HandleAsync(new GrantSubscriptionCommand(AdminId, userId, dto), ct), "Subscription granted.");
     }
 
     [Authorize(Roles = "SuperAdmin")]
@@ -40,7 +40,7 @@ public class AdminUsersController : ApiControllerBase
         CancellationToken ct)
     {
         if (string.IsNullOrEmpty(AdminId)) return Unauthorized();
-        return HandleResult(await handler.HandleAsync(AdminId, userId, dto, ct), "Subscription revoked.");
+        return HandleResult(await handler.HandleAsync(new RevokeSubscriptionCommand(AdminId, userId, dto), ct), "Subscription revoked.");
     }
 
     [HttpGet]
@@ -51,7 +51,7 @@ public class AdminUsersController : ApiControllerBase
     {
         if (filter.Page < 1) filter.Page = 1;
         if (filter.PageSize is < 1 or > 100) filter.PageSize = 20;
-        return HandleResult(await handler.HandleAsync(filter, ct));
+        return HandleResult(await handler.HandleAsync(new ListUsersQuery(filter), ct));
     }
 
     [HttpGet("{userId}")]
@@ -59,5 +59,5 @@ public class AdminUsersController : ApiControllerBase
         string userId,
         [FromServices] GetUserDetailHandler handler,
         CancellationToken ct)
-        => HandleResult(await handler.HandleAsync(userId, ct));
+        => HandleResult(await handler.HandleAsync(new GetUserDetailQuery(userId), ct));
 }

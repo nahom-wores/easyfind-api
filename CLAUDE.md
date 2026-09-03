@@ -37,10 +37,32 @@ to ECR, forces a new ECS deployment (eu-central-1).
 
 ### CQRS handlers, and nothing else
 
-All business logic lives in `Features/<Domain>/{Commands,Queries}/`. **One file = one use case = one handler
-class = one public `HandleAsync`.** Commands write, queries read, and nothing sits between the controller and
-the work — there is no mediator (MediatR and AutoMapper were removed because nothing used them) and no
-service layer left to route through.
+All business logic lives in `Features/<Domain>/{Commands,Queries}/`. **One file = one use case = one message
++ one handler + one public `HandleAsync`.** Commands write, queries read, and nothing sits between the
+controller and the work — there is no mediator (MediatR and AutoMapper were removed because nothing used
+them) and no service layer left to route through.
+
+Each file declares its message directly above its handler:
+
+```csharp
+public sealed record GrantSubscriptionCommand(string AdminUserId, string TargetUserId, GrantSubscriptionDto Grant);
+
+public class GrantSubscriptionHandler(...)
+{
+    public async Task<Result> HandleAsync(GrantSubscriptionCommand command, CancellationToken ct = default)
+    {
+        var (adminUserId, targetUserId, dto) = command;
+        ...
+```
+
+Two rules keep these from bloating:
+
+- **Messages compose the request DTO, they never re-declare its fields** — `CreateListingCommand(CreateListingDto Listing)`, not 20 copied properties. The DTO stays the wire contract; the message names the *operation's* full input.
+- **Naming the fields is the point.** `GrantSubscriptionCommand` has two adjacent strings; passed positionally, swapping them would credit the wrong account and file the audit row backwards. That is the whole reason these records exist, not conformance to a pattern.
+
+Handlers deconstruct the message on the first line, so bodies read exactly as they would with loose
+parameters. The single exception is `GetOverviewStatsHandler`, which takes no input at all — an empty record
+would be ceremony, so it just takes a `CancellationToken`.
 
 ```
 Features/
@@ -69,8 +91,8 @@ Handlers are injected **per action** with `[FromServices]`, so an endpoint's sig
 what it touches and adding one can't disturb another. Controllers hold no business logic: they normalise
 input (clamp paging, check the user id) and hand the `Result` to `HandleResult`.
 
-**To add a use case:** new handler class + one line in the feature's `Add<Feature>Feature()` method in
-`LifetimeServicesCollectionExtensions.cs` + one controller action. Nothing is registered by assembly
+**To add a use case:** new file with a `XCommand`/`XQuery` record and its handler + one line in the feature's
+`Add<Feature>Feature()` method in `LifetimeServicesCollectionExtensions.cs` + one controller action. Nothing is registered by assembly
 scanning, so "why did this resolve?" is always answerable by reading that one file; miss the line and the
 endpoint fails fast on its first request.
 
@@ -140,8 +162,32 @@ feed DTO but never populated, so feed items carry no apply link even for paid us
 - The service depends on `ICurrentUser`, so it only works inside a request. A background job that needs
   listings must take an explicit scope rather than calling it.
 - Admin controllers use `[Authorize(Roles = "Admin")]` and route under `api/v{version}/admin/...`.
-- Rate-limit policies `otp` and `auth` are defined in `Program.cs`, but the `[EnableRateLimiting]` attributes
-  on `AuthController` are currently commented out.
+### OTP abuse limits
+
+Two independent layers, both required. An OTP send costs money and rings a stranger's phone.
+
+- **Per phone number — the real control.** `IOtpThrottle` / `OtpThrottleService`, counted in Postgres
+  (`OtpThrottles` table, one row per number). Sends are capped per rolling window; failed verifications lock
+  the number out for a cooldown that refuses **even a correct code** — otherwise guessing on the last
+  permitted try still wins. Counting is in the database, not memory, because several ECS tasks would each
+  keep their own counter and multiply every limit by the task count. The increments are conditional
+  `ExecuteUpdateAsync` statements, so a burst cannot all read the same count.
+- **Per client IP — a backstop.** The `otp-send` / `otp-verify` rate-limiter policies. In-process, so the
+  effective cap is (configured × task count); deliberately loose, because several real users can share one
+  NAT address. It catches an attacker rotating phone numbers, which the per-phone limit cannot.
+
+Both are needed: the caller picks the phone number, so a per-phone limit alone is bypassed by rotating
+numbers, while a per-IP limit alone lets a botnet bomb one victim. Limits live under `OtpThrottle` in
+configuration. 429s return the normal `ApiResponse` envelope plus `Retry-After`.
+
+**`BehindReverseProxy` must stay true in production.** Without `UseForwardedHeaders`, every request behind the
+ALB appears to come from the load balancer and per-IP limiting becomes one global bucket. `ForwardLimit = 1`
+takes the entry the ALB appended, so a client-supplied `X-Forwarded-For` cannot spoof it.
+
+**History, worth not repeating:** the previous `otp` policy partitioned on an `X-Phone` header that no client
+sends. A missing header yields `""` (not `null`), so `?? "anonymous"` never fired and every caller on earth
+shared one 3-per-hour bucket — it rate-limited the entire product and had to be removed. Partition on
+something the request actually carries.
 
 ### Data
 
@@ -187,9 +233,37 @@ explicitly in the handler and return `Result.Validation(...)`.
 
 ## Tests
 
-- `EasyFind.UnitTests` — xUnit + FluentAssertions, pure functions only (`ListingScorerTests`).
-- `EasyFind.IntegrationTests` — `WebApplicationFactory<Program>` (`Program` is `public partial` for this).
-  `CustomWebApplicationFactory` swaps every EF/Npgsql registration for a single kept-open **SQLite in-memory**
-  connection, calls `EnsureCreated()` (no migrations), forces the `Test` environment, and blanks the Redis
-  connection string so the no-op cache is used. Postgres-specific SQL (`EF.Functions.ILike`, array columns)
-  will not run under these tests.
+`dotnet test` runs both projects, and `deploy.yml` runs it before building the image — a failing test now
+blocks the deploy.
+
+- `EasyFind.UnitTests` — xUnit + FluentAssertions, pure functions only (`ListingScorerTests`). Note these
+  test `ListingScorer`, which production does not call; see the scoring note above.
+- `EasyFind.IntegrationTests` — 21 tests that boot the real app over **SQLite in-memory** and drive real HTTP
+  requests. `FeedGatingTests` covers the paywall from both sides plus the authorization chokepoint,
+  `SubscriptionWebhookTests` covers Chapa idempotency and stacking, `PhoneChangeTests` covers the
+  UserName/PhoneNumber invariant end to end.
+
+**Working on the harness** — four things it has to fight, all documented in `CustomWebApplicationFactory`:
+
+1. **Never declare `partial class Program` in the test project.** It shadows the API's entry point and the
+   host fails with "The entry point exited without ever building an IHost".
+2. **Settings read before `builder.Build()` must be environment variables.** Under minimal hosting the entry
+   point reads configuration as it executes, so `ConfigureAppConfiguration` lands too late — that is why
+   `Hangfire__Enabled` and the connection strings are set as env vars in a static constructor. Anything read
+   lazily (when a service is constructed) can go in `ConfigureAppConfiguration`.
+3. **Auth**: `TestAuthHandler` authenticates from `X-Test-UserId` / `X-Test-Roles`. All three
+   `AuthenticationOptions` defaults must be overridden, because `Program.cs` names JwtBearer explicitly.
+4. **`ISmsService` and `IChapaClient` are replaced by fakes** so no test touches the network;
+   `FakeSmsService.LastOtpFor(phone)` is how a test "reads the SMS".
+
+Two provider-specific fallbacks in `ApplicationDbContext` exist purely so this works: the `UserProfile` enum
+arrays become a CSV string, and `DateTimeOffset` becomes a binary long (SQLite cannot `ORDER BY` one, and the
+feed orders by `CreatedAt`). **Both mean the test database encodes those columns differently than production**,
+so anything depending on Postgres array or timestamp semantics still needs a real Postgres. `EF.Functions.ILike`
+is still Postgres-only — search filters are untested here. Nor can concurrency be tested: the tests share one
+SQLite connection, so parallel requests just return "database is locked" — the atomicity of the OTP throttle
+and the payment guard needs a real Postgres to verify.
+
+Migrations: `OtpThrottles` was added in `20260903_OtpThrottle`. Integration tests use `EnsureCreated()`, so
+they never run migrations — a new table works in tests whether or not you generated one. **Remember to run
+`dotnet ef migrations add`**, or it will be missing in production.

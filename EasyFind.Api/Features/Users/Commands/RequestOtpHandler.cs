@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.UserDto;
@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Users.Commands;
+
+public sealed record RequestOtpCommand(LogInRequestDto Credentials);
 
 // Step 1 of sign-in: send an OTP by SMS.
 //
@@ -21,8 +23,9 @@ public class RequestOtpHandler(
     ISmsService smsService,
     ILogger<RequestOtpHandler> logger)
 {
-    public async Task<LoginResponseDto> HandleAsync(LogInRequestDto dto)
+    public async Task<LoginResponseDto> HandleAsync(RequestOtpCommand command)
     {
+        var dto = command.Credentials;
         // Find existing user, or create a new one
         var user = await userManager.FindByNameAsync(dto.PhoneNumber);
 
@@ -36,15 +39,37 @@ public class RequestOtpHandler(
                 CreatedAt = DateTimeOffset.UtcNow,
             };
 
-            var result = await userManager.CreateAsync(user);
-            if (!result.Succeeded)
+            // Two simultaneous first-time requests for the same number both get
+            // here, and one loses the race on the unique UserName index. Catch
+            // that and adopt the account the winner created rather than failing
+            // the caller — this is the sign-in path, and a duplicate request is
+            // not the user's fault.
+            IdentityResult result;
+            try
             {
-                var errors = string.Join(", ", result.Errors.Select(e => e.Description));
-                logger.LogError("User creation failed: {Errors}", errors);
-                return new LoginResponseDto { IsSuccess = false, ResultMessage = errors };
+                result = await userManager.CreateAsync(user);
+            }
+            catch (DbUpdateException)
+            {
+                result = IdentityResult.Failed();
             }
 
-            await userManager.AddToRoleAsync(user, AppRoles.User);
+            if (!result.Succeeded)
+            {
+                var existing = await userManager.FindByNameAsync(dto.PhoneNumber);
+                if (existing is null)
+                {
+                    var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+                    logger.LogError("User creation failed: {Errors}", errors);
+                    return new LoginResponseDto { IsSuccess = false, ResultMessage = errors };
+                }
+
+                user = existing;   // the concurrent request created it
+            }
+            else
+            {
+                await userManager.AddToRoleAsync(user, AppRoles.User);
+            }
         }
 
         // From here, the path is identical for new AND returning users

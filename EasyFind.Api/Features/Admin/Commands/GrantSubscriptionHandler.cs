@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Models.Admin;
 using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Dto.Admin;
@@ -9,6 +9,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Admin.Commands;
 
+// Named fields matter here: AdminUserId and TargetUserId are both strings, so
+// ordering them positionally invites crediting the wrong account and filing the
+// audit row backwards.
+public sealed record GrantSubscriptionCommand(string AdminUserId, string TargetUserId, GrantSubscriptionDto Grant);
+
 // SuperAdmin comps a subscription. Stacks onto an existing one using the same
 // rule as a real payment, and writes an AdminAction row so every manual grant
 // is attributable: who, to whom, and why.
@@ -17,9 +22,9 @@ public class GrantSubscriptionHandler(
     UserManager<ApplicationUser> userManager,
     ILogger<GrantSubscriptionHandler> logger)
 {
-    public async Task<Result> HandleAsync(string adminUserId, string targetUserId,
-        GrantSubscriptionDto dto, CancellationToken ct = default)
+    public async Task<Result> HandleAsync(GrantSubscriptionCommand command, CancellationToken ct = default)
     {
+        var (adminUserId, targetUserId, dto) = command;
         if (dto.Tier == SubscriptionTier.Free)
                 return Result.Validation("Cannot grant the Free tier. Use revoke to downgrade.");
             if (dto.DurationDays <= 0)

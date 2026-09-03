@@ -1,4 +1,4 @@
-﻿using Asp.Versioning;
+using Asp.Versioning;
 using EasyFind.Api.Features.Subscriptions.Commands;
 using EasyFind.Api.Features.Subscriptions.Queries;
 using EasyFind.Api.Models.Dto.Common;
@@ -22,7 +22,7 @@ public class SubscriptionsController : ApiControllerBase
         CancellationToken ct)
     {
         if (string.IsNullOrEmpty(UserId)) return Unauthorized();
-        return HandleResult(await handler.HandleAsync(UserId, dto.Tier, ct));
+        return HandleResult(await handler.HandleAsync(new InitiateSubscriptionCommand(UserId, dto.Tier), ct));
     }
 
     [HttpGet("me")]
@@ -31,6 +31,6 @@ public class SubscriptionsController : ApiControllerBase
         CancellationToken ct)
     {
         if (string.IsNullOrEmpty(UserId)) return Unauthorized();
-        return HandleResult(await handler.HandleAsync(UserId, ct));
+        return HandleResult(await handler.HandleAsync(new GetMySubscriptionStatusQuery(UserId), ct));
     }
 }

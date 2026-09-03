@@ -7,6 +7,8 @@ using EasyFind.Api;
 using EasyFind.Api.Data;
 using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Options;
+using Microsoft.AspNetCore.HttpOverrides;
+using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Services.Jobs;
 using Hangfire;
 using Hangfire.PostgreSql;
@@ -159,36 +161,68 @@ builder.Services.AddAuthentication(x =>
 
 #region RateLimiter
 
+// Per-IP backstop only. The real limits are per phone number and live in
+// Postgres (IOtpThrottle) — these counters are in-process, so with N ECS tasks
+// the effective cap is N times what is configured. Set them loose enough that
+// legitimate users sharing a NAT never trip them; the per-phone limits do the
+// precise work.
+//
+// HISTORY: the previous version partitioned on an "X-Phone" header that no
+// client ever sends. A missing header yields "" (not null), so every caller in
+// the world shared a single 3-per-hour bucket. Partition on something the
+// request actually carries.
+var otpThrottleOptions = builder.Configuration
+    .GetSection(OtpThrottleOptions.SectionName).Get<OtpThrottleOptions>() ?? new OtpThrottleOptions();
+
 builder.Services.AddRateLimiter(rateLimitOptions =>
 {
     rateLimitOptions.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
-    rateLimitOptions.AddPolicy("otp", context =>
+    // Answer in the same envelope as everything else, and say when to retry —
+    // otherwise the client cannot tell throttling from an outage.
+    rateLimitOptions.OnRejected = async (context, ct) =>
     {
-        var phone = context.Request.Headers["X-Phone"].ToString();
+        var retryAfter = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var wait)
+            ? wait
+            : TimeSpan.FromMinutes(otpThrottleOptions.IpWindowMinutes);
 
-        return RateLimitPartition.GetFixedWindowLimiter(
-            phone ?? "anonymous",
+        context.HttpContext.Response.Headers.RetryAfter =
+            ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString();
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+
+        var body = new ApiResponse { IsSuccess = false };
+        body.Errors.Add("Too many attempts. Please try again later.");
+        await context.HttpContext.Response.WriteAsJsonAsync(body, ct);
+    };
+
+    // Sending a code: costs money and rings someone's phone.
+    rateLimitOptions.AddPolicy("otp-send", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            ClientIpOf(context),
             _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 3,
-                Window = TimeSpan.FromHours(1)
-            });
-    });
+                PermitLimit = otpThrottleOptions.SendsPerIpPerWindow,
+                Window = otpThrottleOptions.IpWindow
+            }));
 
-    // Auth rule
-    rateLimitOptions.AddPolicy("auth", context =>
-    {
-        var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        return RateLimitPartition.GetSlidingWindowLimiter(
-            ip, _ => new SlidingWindowRateLimiterOptions()
+    // Checking a code: the brute-force surface.
+    rateLimitOptions.AddPolicy("otp-verify", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            ClientIpOf(context),
+            _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 10,
-                Window = TimeSpan.FromMinutes(5),
-                SegmentsPerWindow = 5
-            });
-    });
+                PermitLimit = otpThrottleOptions.VerificationsPerIpPerWindow,
+                Window = otpThrottleOptions.IpWindow
+            }));
 });
+
+// Behind the ALB every request appears to come from the load balancer, so
+// without UseForwardedHeaders (configured below) this would be one global
+// bucket. Falling back to a single constant key would do the same, so an
+// unknown IP is treated as its own partition per connection.
+static string ClientIpOf(HttpContext context) =>
+    context.Connection.RemoteIpAddress?.ToString()
+    ?? "unknown-" + context.Connection.Id;
 
 #endregion
 
@@ -234,14 +268,22 @@ builder.Services.AddOpenApi(options => { options.AddDocumentTransformer<BearerSe
 
 #region hangfire background service
 
-builder.Services.AddHangfire(config => config
-    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
-    .UseSimpleAssemblyNameTypeSerializer()
-    .UseRecommendedSerializerSettings()
-    .UsePostgreSqlStorage(options =>
-        options.UseNpgsqlConnection(builder.Configuration
-            .GetConnectionString("DefaultConnection"))));
-builder.Services.AddHangfireServer();
+// Hangfire needs a live Postgres at startup, so it is switchable: integration
+// tests run against SQLite and turn it off, and it can be disabled on an
+// instance that should not run background jobs. Defaults to on.
+var hangfireEnabled = builder.Configuration.GetValue("Hangfire:Enabled", true);
+
+if (hangfireEnabled)
+{
+    builder.Services.AddHangfire(config => config
+        .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+        .UseSimpleAssemblyNameTypeSerializer()
+        .UseRecommendedSerializerSettings()
+        .UsePostgreSqlStorage(options =>
+            options.UseNpgsqlConnection(builder.Configuration
+                .GetConnectionString("DefaultConnection"))));
+    builder.Services.AddHangfireServer();
+}
 
 #endregion
 
@@ -256,15 +298,45 @@ builder.Services
     .ValidateOnStart();
 builder.Services.Configure<DocumentUploadOptions>(
     builder.Configuration.GetSection(DocumentUploadOptions.SectionName));
+
+builder.Services
+    .AddOptions<OtpThrottleOptions>()
+    .Bind(builder.Configuration.GetSection(OtpThrottleOptions.SectionName))
+    .Validate(o => o.SendsPerWindow > 0 && o.SendWindowMinutes > 0,
+        "OTP send limits must be positive.")
+    .Validate(o => o.MaxFailedVerifications > 0 && o.LockoutMinutes > 0,
+        "OTP verification limits must be positive.")
+    .ValidateOnStart();
+
+// The ALB terminates the connection, so without this every request looks like it
+// came from the load balancer and any per-IP limit becomes a global one.
+//
+// ForwardLimit = 1 takes the entry the ALB appended (the real client) and
+// ignores any X-Forwarded-For the caller supplied, so it cannot be spoofed.
+// KnownNetworks/Proxies are cleared because the ALB's private IP is not stable.
+// Off by default so local development is unaffected.
+if (builder.Configuration.GetValue("BehindReverseProxy", false))
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        options.ForwardLimit = 1;
+        options.KnownNetworks.Clear();
+        options.KnownProxies.Clear();
+    });
+}
 //-------------------------request pipeline-----------------------------//
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
-app.UseHangfireDashboard("/hangfire");
-RecurringJob.AddOrUpdate<SubscriptionExpiryJob>(
-    "subscription-expiry", // unique job id
-    job => job.RunAsync(), // what to call
-    Cron.Daily(2)); // when: every day at 02:00 UTC
+if (hangfireEnabled)
+{
+    app.UseHangfireDashboard("/hangfire");
+    RecurringJob.AddOrUpdate<SubscriptionExpiryJob>(
+        "subscription-expiry", // unique job id
+        job => job.RunAsync(), // what to call
+        Cron.Daily(2)); // when: every day at 02:00 UTC
+}
 
 if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
 {
@@ -301,6 +373,10 @@ using (var scope = app.Services.CreateScope())
             await roleManager.CreateAsync(new IdentityRole(role));
     }
 }
+
+// Must run before anything that reads the client IP — the rate limiter above all.
+if (app.Configuration.GetValue("BehindReverseProxy", false))
+    app.UseForwardedHeaders();
 
 if (app.Environment.IsDevelopment())
     app.UseHttpsRedirection();

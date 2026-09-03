@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using Asp.Versioning;
 using EasyFind.Api.Features.Listings.Queries;
 using EasyFind.Api.Models.Dto.Common;
@@ -29,6 +29,6 @@ public class FeedController : ApiControllerBase
         if (request.Page < 1) request.Page = 1;
         if (request.PageSize is < 1 or > 50) request.PageSize = 20;
 
-        return HandleResult(await handler.HandleAsync(userId, request, ct));
+        return HandleResult(await handler.HandleAsync(new GetFeedQuery(userId, request), ct));
     }
 }

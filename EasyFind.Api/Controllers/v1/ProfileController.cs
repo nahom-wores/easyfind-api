@@ -21,7 +21,7 @@ public class ProfileController : ApiControllerBase
         CancellationToken ct)
     {
         if (string.IsNullOrEmpty(UserId)) return Unauthorized();
-        return HandleResult(await handler.HandleAsync(UserId, ct));
+        return HandleResult(await handler.HandleAsync(new GetProfileQuery(UserId), ct));
     }
 
     // Create-or-update: one endpoint for onboarding and every later edit.
@@ -32,6 +32,6 @@ public class ProfileController : ApiControllerBase
         CancellationToken ct)
     {
         if (string.IsNullOrEmpty(UserId)) return Unauthorized();
-        return HandleResult(await handler.HandleAsync(UserId, dto, ct));
+        return HandleResult(await handler.HandleAsync(new UpsertProfileCommand(UserId, dto), ct));
     }
 }

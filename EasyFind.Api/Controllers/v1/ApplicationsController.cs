@@ -24,7 +24,7 @@ public class ApplicationsController : ApiControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
-        return HandleResult(await handler.HandleAsync(userId, dto, ct));
+        return HandleResult(await handler.HandleAsync(new CreateApplicationCommand(userId, dto), ct));
     }
 
     [HttpPut("{applicationId:guid}")]
@@ -36,7 +36,7 @@ public class ApplicationsController : ApiControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
-        return HandleResult(await handler.HandleAsync(userId, applicationId, dto, ct), "Updated.");
+        return HandleResult(await handler.HandleAsync(new UpdateApplicationCommand(userId, applicationId, dto), ct), "Updated.");
     }
 
     [HttpDelete("{applicationId:guid}")]
@@ -47,7 +47,7 @@ public class ApplicationsController : ApiControllerBase
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
-        return HandleResult(await handler.HandleAsync(userId, applicationId, ct), "Removed.");
+        return HandleResult(await handler.HandleAsync(new DeleteApplicationCommand(userId, applicationId), ct), "Removed.");
     }
 
     [HttpGet]
@@ -60,6 +60,6 @@ public class ApplicationsController : ApiControllerBase
         if (page < 1) page = 1;
         if (pageSize is < 1 or > 50) pageSize = 20;
 
-        return HandleResult(await handler.HandleAsync(userId, page, pageSize, ct));
+        return HandleResult(await handler.HandleAsync(new GetUserApplicationsQuery(userId, page, pageSize), ct));
     }
 }

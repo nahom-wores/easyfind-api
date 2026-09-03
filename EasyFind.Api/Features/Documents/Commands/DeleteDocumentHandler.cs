@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Users;
 using EasyFind.Api.Services.IServices;
@@ -6,14 +6,17 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Documents.Commands;
 
+public sealed record DeleteDocumentCommand(string UserId, Guid DocumentId);
+
 // Delete one of the user's own documents. Ownership is in the query.
 public class DeleteDocumentHandler(
     ApplicationDbContext db,
     IStorageService storage,
     ILogger<DeleteDocumentHandler> logger)
 {
-    public async Task<Result> HandleAsync(string userId, Guid documentId, CancellationToken ct = default)
+    public async Task<Result> HandleAsync(DeleteDocumentCommand command, CancellationToken ct = default)
     {
+        var (userId, documentId) = command;
         var doc = await db.UserDocuments
             .FirstOrDefaultAsync(d => d.Id == documentId && d.UserId == userId, ct);
         if (doc is null) return Result.NotFound("Document not found.");

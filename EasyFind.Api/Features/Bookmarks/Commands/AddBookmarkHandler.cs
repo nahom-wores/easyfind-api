@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Data;
+using EasyFind.Api.Data;
 using EasyFind.Api.Features.Listings;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Listings;
@@ -7,14 +7,17 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Bookmarks.Commands;
 
+public sealed record AddBookmarkCommand(string UserId, Guid ListingId);
+
 // Save a listing. Paid feature.
 public class AddBookmarkHandler(
     ApplicationDbContext db,
     ListingAuthorizationService listings,
     SubscriptionGate gate)
 {
-    public async Task<Result> HandleAsync(string userId, Guid listingId, CancellationToken ct = default)
+    public async Task<Result> HandleAsync(AddBookmarkCommand command, CancellationToken ct = default)
     {
+        var (userId, listingId) = command;
         var tier = await db.Users.AsNoTracking()
             .Where(u => u.Id == userId).Select(u => u.SubscriptionTier)
             .FirstOrDefaultAsync(ct);

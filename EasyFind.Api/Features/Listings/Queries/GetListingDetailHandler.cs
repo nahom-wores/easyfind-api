@@ -1,4 +1,4 @@
-﻿using EasyFind.Api.Models.Auth;
+using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.Listings;
 using EasyFind.Api.Models.Subscriptions;
@@ -8,6 +8,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace EasyFind.Api.Features.Listings.Queries;
 
+// Which listing, and who is asking (their tier decides what is gated).
+public sealed record GetListingDetailQuery(Guid ListingId, string UserId);
+
 // One listing, consumer view. Free users get the listing with the company name
 // and apply link stripped out — see SubscriptionGate.
 public class GetListingDetailHandler(
@@ -15,9 +18,9 @@ public class GetListingDetailHandler(
     UserManager<ApplicationUser> userManager,
     SubscriptionGate gate)
 {
-    public async Task<Result<ListingDetailDto>> HandleAsync(
-        Guid listingId, string userId, CancellationToken ct = default)
+    public async Task<Result<ListingDetailDto>> HandleAsync(GetListingDetailQuery query, CancellationToken ct = default)
     {
+        var (listingId, userId) = query;
         var listing = await listings.AuthorizedListings()
             .AsNoTracking()
             .FirstOrDefaultAsync(l => l.Id == listingId && l.IsActive, ct);
