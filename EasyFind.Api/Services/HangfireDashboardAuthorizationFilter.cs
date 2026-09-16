@@ -1,4 +1,3 @@
-using EasyFind.Api.Models.Auth;
 using Hangfire.Dashboard;
 
 namespace EasyFind.Api.Services;
@@ -8,21 +7,29 @@ namespace EasyFind.Api.Services;
 // delete jobs. It has no authorization of its own, so this filter is the whole
 // of it.
 //
-// Two things have to line up for this to work at all:
-//
-//  1. UseHangfireDashboard must be called AFTER UseAuthentication/UseAuthorization.
-//     Called earlier, HttpContext.User is still the empty anonymous principal
-//     and this filter denies every request, including a legitimate admin's.
-//  2. The dashboard is a browser page, and a browser will not attach an
-//     Authorization header. Program.cs's JwtBearerEvents.OnMessageReceived
-//     therefore also accepts ?access_token= on this path.
+// The principal it reads is put on the context by UseHangfireDashboardAuth,
+// which must run before UseHangfireDashboard — see HangfireDashboardAuth for
+// why the dashboard has its own cookie session rather than using the bearer
+// token directly.
 public class HangfireDashboardAuthorizationFilter : IDashboardAuthorizationFilter
 {
     public bool Authorize(DashboardContext context)
     {
-        var user = context.GetHttpContext().User;
+        var httpContext = context.GetHttpContext();
 
-        return user.Identity?.IsAuthenticated == true
-               && (user.IsInRole(AppRoles.Admin) || user.IsInRole(AppRoles.SuperAdmin));
+        if (HangfireDashboardAuth.IsDashboardAdmin(httpContext.User))
+            return true;
+
+        // Send a person to the login form rather than leaving them at a blank
+        // 401 — but only for a page they navigated to. Redirecting the
+        // dashboard's own CSS, JS and stats polling would answer them with HTML
+        // and quietly corrupt the page instead of failing honestly.
+        if (HttpMethods.IsGet(httpContext.Request.Method)
+            && httpContext.Request.Headers.Accept.ToString().Contains("text/html"))
+        {
+            httpContext.Response.Redirect(HangfireDashboardAuth.LoginPath);
+        }
+
+        return false;
     }
 }

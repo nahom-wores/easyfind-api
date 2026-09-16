@@ -154,13 +154,12 @@ builder.Services.AddAuthentication(x =>
                 var accessToken = context.Request.Query["access_token"];
                 var path = context.HttpContext.Request.Path;
 
-                // Browsers do not attach an Authorization header when they
-                // navigate, so the two endpoints a person opens directly — the
-                // chat hub handshake and the Hangfire dashboard — accept the
-                // token on the query string instead. Everything else must use
-                // the header.
-                if (!string.IsNullOrEmpty(accessToken)
-                    && (path.StartsWithSegments("/hubs/chat") || path.StartsWithSegments("/hangfire")))
+                // The chat hub handshake cannot send an Authorization header, so
+                // it takes the token on the query string. Nothing else does:
+                // a token in a URL is recorded in ALB access logs, browser
+                // history and Referer headers. The Hangfire dashboard has its
+                // own cookie session for this reason — see HangfireDashboardAuth.
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/chat"))
                 {
                     context.Token = accessToken;
                 }
@@ -467,14 +466,24 @@ app.UseAuthorization();
 // HttpContext.User, which is still anonymous until authentication has run.
 // Mapped any earlier it would reject every caller, admins included.
 //
-// Opt-in per environment, and authorized even when on: it exposes job
-// arguments and can enqueue, requeue and delete jobs, so an unauthenticated
-// /hangfire behind the ALB is remote control of the background queue. Enable it
-// deliberately with Hangfire__DashboardEnabled=true; an admin then opens
-// /hangfire?access_token=<jwt> (see JwtBearerEvents above).
-if (hangfireEnabled && app.Configuration.GetValue("Hangfire:DashboardEnabled", false))
+// It exposes job arguments and can enqueue, requeue and delete jobs, so an
+// unauthenticated /hangfire behind the ALB is remote control of the background
+// queue. An admin signs in at /hangfire/login by pasting an access token, which
+// is exchanged for a session cookie — see HangfireDashboardAuth for why it
+// cannot simply read the bearer token.
+//
+// Still switchable (Hangfire:DashboardEnabled) so an instance can be deployed
+// without it at all.
+if (hangfireEnabled && app.Configuration.GetValue("Hangfire:DashboardEnabled", true))
 {
-    app.UseHangfireDashboard("/hangfire", new DashboardOptions
+    // Order is the whole design here:
+    //   1. the login branch, before Hangfire can 404 an unknown /hangfire path
+    //   2. the cookie -> HttpContext.User step, before the filter reads User
+    //   3. the dashboard itself
+    app.MapHangfireLogin();
+    app.UseHangfireDashboardAuth();
+
+    app.UseHangfireDashboard(HangfireDashboardAuth.DashboardPath, new DashboardOptions
     {
         Authorization = [new HangfireDashboardAuthorizationFilter()],
 

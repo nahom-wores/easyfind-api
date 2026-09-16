@@ -227,16 +227,30 @@ webhook (signature-verified by `ChapaWebhookVerifier` against `chapa-signature`/
 GET callback, and both funnel into `HandleWebhookAsync`, which must stay **idempotent**. Tier is `Free | Pro`.
 `Services/Jobs/SubscriptionExpiryJob` runs daily at 02:00 UTC via Hangfire (Postgres storage).
 
-**The Hangfire dashboard is opt-in and authorized.** Registering the recurring job and exposing the dashboard
-are separate: the job runs wherever `Hangfire:Enabled` is true, while `/hangfire` is mapped only when
-`Hangfire:DashboardEnabled` is *also* true (off everywhere by default), behind
-`HangfireDashboardAuthorizationFilter` (Admin/SuperAdmin). It has no authorization of its own, and it can
-enqueue, requeue and delete jobs, so an open one is remote control of the queue.
+**The Hangfire dashboard has its own sign-in** (`HangfireDashboardAuth`). Registering the recurring job and
+exposing the dashboard are separate: the job runs wherever `Hangfire:Enabled` is true, while `/hangfire` is
+mapped when `Hangfire:DashboardEnabled` is *also* true (on by default). It has no authorization of its own and
+can enqueue, requeue and delete jobs, so an open one is remote control of the queue —
+`HangfireDashboardAuthorizationFilter` (Admin/SuperAdmin) is the whole of its protection.
 
-Two ordering constraints, both load-bearing: the dashboard is mapped **after `UseAuthentication()`** — earlier,
-`HttpContext.User` is still anonymous and the filter rejects everyone including real admins — and the JWT
-`OnMessageReceived` hook accepts `?access_token=` on `/hangfire`, because a browser navigating to it sends no
-`Authorization` header.
+An admin signs in at **`/hangfire/login`** by pasting an access token, which is exchanged for a session cookie.
+Two things forced that design, and both are easy to "simplify" back into a broken dashboard:
+
+- **A query-string token is not enough.** Hangfire serves its CSS, JS, the `/hangfire/stats` poll and every nav
+  link as separate requests carrying no query string, so `?access_token=` yields an unstyled page that 401s on
+  the first click. It also writes a live admin JWT into ALB access logs, browser history and `Referer`.
+- **`AddCookie()` would not survive multiple tasks.** Its ticket is encrypted with Data Protection keys, and
+  nothing persists those to shared storage — each ECS task has its own key ring, so a cookie minted by one task
+  fails on the next request that lands elsewhere. The cookie therefore carries the JWT itself, validated
+  against the same `JwtBearerOptions` every task shares.
+
+The cookie is `HttpOnly`, `Secure` over HTTPS, `Path=/hangfire`, and **`SameSite=Strict`** — that last one is
+load-bearing: the dashboard deletes and requeues jobs over plain POSTs, and a cookie sent cross-site would let
+any page drive them.
+
+Pipeline order is also load-bearing, all of it below `UseAuthentication()`: `MapHangfireLogin()` first (before
+Hangfire's middleware 404s an unknown `/hangfire` path), then `UseHangfireDashboardAuth()` (the cookie →
+`HttpContext.User` step, which the *synchronous* dashboard filter depends on), then `UseHangfireDashboard()`.
 
 ### Infrastructure notes
 
@@ -291,8 +305,12 @@ blocks the deploy.
   requests. `FeedGatingTests` covers the paywall from both sides plus the authorization chokepoint,
   `SubscriptionWebhookTests` covers Chapa idempotency and stacking, `PhoneChangeTests` covers the
   UserName/PhoneNumber invariant end to end, and `OperationalHardeningTests` covers the Program.cs
-  decisions that only fail in production — liveness surviving an unreachable database, the Hangfire
-  dashboard refusing anonymous and non-admin callers, and the issued access token expiring in hours.
+  decisions that only fail in production — liveness surviving an unreachable database and the issued access
+  token expiring in hours.
+- `HangfireDashboardAuthTests` is the exception to "boot the real app": the dashboard needs Hangfire's
+  Postgres storage at startup, which is exactly what the harness disables. It hosts `MapHangfireLogin` and
+  `UseHangfireDashboardAuth` on a bare `TestServer` with a stand-in for the dashboard, and covers the token
+  exchange, the cookie flags, and rejection of non-admin, forged and expired tokens.
 
 **Working on the harness** — four things it has to fight, all documented in `CustomWebApplicationFactory`:
 

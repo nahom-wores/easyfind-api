@@ -59,32 +59,22 @@ public class OperationalHardeningTests(CustomWebApplicationFactory factory)
         (await response.Content.ReadAsStringAsync()).Should().Contain("postgres");
     }
 
-    // ── The Hangfire dashboard is never open ─────────────────────────────────
+    // ── Turning Hangfire off really does remove the dashboard ────────────────
     //
-    // It exposes job arguments and can enqueue, requeue and delete jobs, so an
-    // unauthenticated /hangfire behind the ALB is remote control of the
-    // background queue. It is opt-in (Hangfire:DashboardEnabled) and authorized
-    // to Admin/SuperAdmin even when enabled.
+    // This harness sets Hangfire__Enabled=false (the dashboard needs Hangfire's
+    // Postgres storage at startup), so what this asserts is the disabled path:
+    // no route is left behind. The dashboard's ACTUAL authentication — the login
+    // exchange, the session cookie and the admin check — is covered by
+    // HangfireDashboardAuthTests, which hosts those pieces without Hangfire.
     [Fact]
-    public async Task HangfireDashboard_IsNotServedToAnonymousCallers()
+    public async Task HangfireDashboard_IsAbsentEntirely_WhenHangfireIsDisabled()
     {
         var client = factory.CreateClient();
 
         var response = await client.GetAsync("/hangfire");
 
-        response.StatusCode.Should().NotBe(HttpStatusCode.OK,
-            "the dashboard must never answer an unauthenticated caller");
-    }
-
-    [Fact]
-    public async Task HangfireDashboard_IsNotServedToASignedInNonAdmin()
-    {
-        var (client, _) = await factory.SignedInUserAsync(role: AppRoles.User);
-
-        var response = await client.GetAsync("/hangfire");
-
-        response.StatusCode.Should().NotBe(HttpStatusCode.OK,
-            "an ordinary signed-in user must not reach the job queue");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+            "disabling Hangfire must leave no route serving the job queue");
     }
 
     // ── Access tokens expire soon enough to be a revocation window ────────────
