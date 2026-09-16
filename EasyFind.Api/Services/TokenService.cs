@@ -15,9 +15,22 @@ namespace EasyFind.Api.Services
 {
     public class TokenService : ITokenService
     {
+        // An access token cannot be revoked — nothing checks it against the
+        // database on the way in, so a ban, a role change or a logout only takes
+        // effect when the current one expires. That expiry is therefore the
+        // revocation window, and it has to stay short. The refresh chain below
+        // is what keeps sessions long-lived.
+        private const int DefaultAccessTokenMinutes = 60;
+
+        // Refuse to issue a token that outlives a working day. Set
+        // JwtConfig:AccessTokenMinutes deliberately; do not raise it to paper
+        // over a client that has not implemented refresh.
+        private const int MaxAccessTokenMinutes = 8 * 60;
+
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly ApplicationDbContext _db;
         private readonly string _secretKey;
+        private readonly TimeSpan _accessTokenLifetime;
 
         public TokenService(UserManager<ApplicationUser> userManager,
             IConfiguration configuration,
@@ -26,6 +39,11 @@ namespace EasyFind.Api.Services
             this._userManager = userManager;
             this._db = db;
             _secretKey = configuration.GetValue<string>("JwtConfig:Secret");
+
+            var minutes = configuration.GetValue("JwtConfig:AccessTokenMinutes", DefaultAccessTokenMinutes);
+            if (minutes <= 0) minutes = DefaultAccessTokenMinutes;
+            if (minutes > MaxAccessTokenMinutes) minutes = MaxAccessTokenMinutes;
+            _accessTokenLifetime = TimeSpan.FromMinutes(minutes);
         }
         public async Task<string> CreateNewRefreshToken(string userId, string tokenId)
         {
@@ -63,8 +81,11 @@ namespace EasyFind.Api.Services
             var tokenDescriptor = new SecurityTokenDescriptor
             {
                 Subject = new ClaimsIdentity(claims),
-                //Expires = DateTime.UtcNow.AddMinutes(15),
-                Expires = DateTime.UtcNow.AddDays(15), // change to minute on production
+                // Short by design — see _accessTokenLifetime. The client is
+                // expected to hit /auth/refresh-token on a 401; RefreshAccessToken
+                // reads the expired token's claims rather than validating it, so
+                // an expired access token still refreshes cleanly.
+                Expires = DateTime.UtcNow.Add(_accessTokenLifetime),
                 SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
             };
 

@@ -47,10 +47,25 @@ jobs:
           docker build -f EasyFind.Api/Dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
+      # NOTE: this pipeline does NOT touch the database schema. Migrations are
+      # applied by hand with `dotnet ef database update`, and that has to happen
+      # BEFORE merging a change that needs one — otherwise the new tasks start
+      # against the old schema and fail on first use.
       - name: Force ECS deployment
         run: |
           aws ecs update-service \
             --cluster $ECS_CLUSTER \
             --service $ECS_SERVICE \
             --force-new-deployment \
+            --region $AWS_REGION
+
+      # Without this the workflow goes green the moment the API call returns,
+      # while the new tasks may still be crash-looping behind it — on a schema
+      # that was never migrated, most likely. ECS rolls back on its own; this
+      # makes the deploy report that it did.
+      - name: Wait for the deployment to stabilise
+        run: |
+          aws ecs wait services-stable \
+            --cluster $ECS_CLUSTER \
+            --services $ECS_SERVICE \
             --region $AWS_REGION

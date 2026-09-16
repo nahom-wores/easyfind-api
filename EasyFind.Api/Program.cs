@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Services.Jobs;
 using Hangfire;
+using Hangfire.Dashboard;
 using Hangfire.PostgreSql;
 using HealthChecks.UI.Client;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -36,9 +37,13 @@ var builder = WebApplication.CreateBuilder(args);
 var npgSqlConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
 
-builder.Services.AddHealthChecks()
-    .AddNpgSql(npgSqlConnectionString, name: "postgres");
-//.AddRedis(redisConnectionString, name: "redis");
+// Tagged "ready", not left untagged, so it lands on /health/ready only. The
+// load balancer probes /health, which checks nothing but that the process is
+// answering — see the mapping further down for why that separation matters.
+var healthChecks = builder.Services.AddHealthChecks();
+if (!string.IsNullOrWhiteSpace(npgSqlConnectionString))
+    healthChecks.AddNpgSql(npgSqlConnectionString, name: "postgres", tags: ["ready"]);
+//.AddRedis(redisConnectionString, name: "redis", tags: ["ready"]);
 
 
 var redisAvailable = !string.IsNullOrWhiteSpace(redisConnectionString)
@@ -148,7 +153,14 @@ builder.Services.AddAuthentication(x =>
             {
                 var accessToken = context.Request.Query["access_token"];
                 var path = context.HttpContext.Request.Path;
-                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/chat"))
+
+                // Browsers do not attach an Authorization header when they
+                // navigate, so the two endpoints a person opens directly — the
+                // chat hub handshake and the Hangfire dashboard — accept the
+                // token on the query string instead. Everything else must use
+                // the header.
+                if (!string.IsNullOrEmpty(accessToken)
+                    && (path.StartsWithSegments("/hubs/chat") || path.StartsWithSegments("/hangfire")))
                 {
                     context.Token = accessToken;
                 }
@@ -366,9 +378,12 @@ if (builder.Configuration.GetValue("BehindReverseProxy", false))
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
+
+// Registering the recurring job is separate from exposing the dashboard: the
+// job must run wherever Hangfire is enabled, the dashboard is opt-in. The
+// dashboard itself is mapped further down, after authentication — see there.
 if (hangfireEnabled)
 {
-    app.UseHangfireDashboard("/hangfire");
     RecurringJob.AddOrUpdate<SubscriptionExpiryJob>(
         "subscription-expiry", // unique job id
         job => job.RunAsync(), // what to call
@@ -389,15 +404,34 @@ if (app.Environment.IsDevelopment() || app.Environment.IsProduction())
     });
 }
 
+// ── Health: liveness and readiness are NOT the same question ──────────────
+//
+// LIVENESS (/health) — "is this process answering?" and nothing more. This is
+// what the ALB target group probes. It must not touch Postgres: a dependency
+// check here fails on every task at once during an RDS blip, the ALB drains the
+// whole service, and a recoverable database hiccup becomes a full outage that
+// outlives it. A task that cannot reach the database is still the task you want
+// kept alive to reconnect.
 app.MapHealthChecks("/health", new HealthCheckOptions
 {
+    Predicate = _ => false,
     ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
 });
-// using (var scope = app.Services.CreateScope())
-// {
-//     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-//     await db.Database.MigrateAsync();
-// }
+
+// READINESS (/health/ready) — "are this task's dependencies actually reachable?"
+// For dashboards, alerting and post-deploy smoke checks. Point monitoring here,
+// never the load balancer.
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
+});
+
+// Migrations are applied by hand — `dotnet ef database update` — deliberately.
+// There is no startup MigrateAsync: a deploy must not be able to alter the
+// schema on its own. That means a migration is a SEPARATE, MANUAL step that has
+// to land BEFORE the image that needs it, or the new tasks start against an old
+// schema and fail on first use.
 
 // ── Seed Identity roles ──────────────────────────────
 using (var scope = app.Services.CreateScope())
@@ -425,6 +459,31 @@ app.UseCors("AllowAll");
 app.UseResponseCaching();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// ── Hangfire dashboard ────────────────────────────────────────────────────
+//
+// Mapped HERE, below UseAuthentication, and not up with the rest of the
+// pipeline configuration: the dashboard's authorization filter reads
+// HttpContext.User, which is still anonymous until authentication has run.
+// Mapped any earlier it would reject every caller, admins included.
+//
+// Opt-in per environment, and authorized even when on: it exposes job
+// arguments and can enqueue, requeue and delete jobs, so an unauthenticated
+// /hangfire behind the ALB is remote control of the background queue. Enable it
+// deliberately with Hangfire__DashboardEnabled=true; an admin then opens
+// /hangfire?access_token=<jwt> (see JwtBearerEvents above).
+if (hangfireEnabled && app.Configuration.GetValue("Hangfire:DashboardEnabled", false))
+{
+    app.UseHangfireDashboard("/hangfire", new DashboardOptions
+    {
+        Authorization = [new HangfireDashboardAuthorizationFilter()],
+
+        // Hangfire treats every remote request as read-only unless told
+        // otherwise; the filter above has already established this is an admin.
+        IsReadOnlyFunc = _ => false
+    });
+}
+
 app.UseRequestLocalization(localizationOptions);
 app.MapControllers();
 app.Run();

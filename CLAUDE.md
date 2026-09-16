@@ -27,8 +27,16 @@ dotnet ef migrations add <Name> --project EasyFind.Api
 dotnet ef database update --project EasyFind.Api
 ```
 
-Migrations are **not** applied at startup (the `MigrateAsync` block in `Program.cs` is commented out) — run
-`dotnet ef database update` yourself. Identity roles (`SuperAdmin`/`Admin`/`User`) *are* seeded on every boot.
+Migrations are **never** applied at startup, in any environment — run `dotnet ef database update` yourself.
+This is a deliberate choice: a deploy must not be able to alter the schema on its own. Identity roles
+(`SuperAdmin`/`Admin`/`User`) *are* seeded on every boot.
+
+**The consequence is that a migration is a separate manual step, and it has to land before the code that
+needs it.** Nothing in `deploy.yml` checks this, and integration tests build their schema with
+`EnsureCreated()` so they pass whether or not a migration exists — merge to `main` with an unapplied
+migration and the new ECS tasks come up against the old schema and fail on first use. `deploy.yml` waits on
+`ecs wait services-stable`, so at least that failure surfaces as a red deploy rather than a green one.
+Apply the migration against production **first**, then merge.
 
 Deploy: pushing to `main` triggers `.github/workflows/deploy.yml` — builds `EasyFind.Api/Dockerfile`, pushes
 to ECR, forces a new ECS deployment (eu-central-1).
@@ -137,6 +145,12 @@ feed DTO but never populated, so feed items carry no apply link even for paid us
 
 - JWT bearer, `ClockSkew.Zero`. Login is **phone + OTP** (`AuthController` request-otp / verify-otp via
   `AfroSmsService`), plus refresh tokens.
+- **The access token lifetime is the revocation window.** Nothing validates an issued token against the
+  database, so a ban, a role change or a logout only takes effect when the current token expires. It is
+  `JwtConfig:AccessTokenMinutes` (default 60), clamped to 8 hours in `TokenService` — it was `AddDays(15)`.
+  The client is expected to call `/auth/refresh-token` on a 401; `RefreshAccessToken` *reads* the old token's
+  claims rather than validating them, so an expired access token still refreshes cleanly. Don't raise this to
+  work around a client that hasn't implemented refresh.
 - **Never change `ApplicationUser.PhoneNumber` without also changing `UserName`.** The two sign-in steps look
   the account up by different columns — `RequestOtpHandler` uses `FindByNameAsync(phone)` (UserName),
   `VerifyOtpHandler` queries `PhoneNumber` — and `RequestOtpHandler` *creates* an account when the lookup
@@ -211,8 +225,18 @@ Deleting twice is a no-op rather than re-stamping the time. Restore clears `Dele
 `SubscriptionService` + `ChapaClient` initiate a payment. `WebhooksController` accepts **both** the POST
 webhook (signature-verified by `ChapaWebhookVerifier` against `chapa-signature`/`x-chapa-signature`) and the
 GET callback, and both funnel into `HandleWebhookAsync`, which must stay **idempotent**. Tier is `Free | Pro`.
-`Services/Jobs/SubscriptionExpiryJob` runs daily at 02:00 UTC via Hangfire (Postgres storage, dashboard at
-`/hangfire`, currently unauthenticated).
+`Services/Jobs/SubscriptionExpiryJob` runs daily at 02:00 UTC via Hangfire (Postgres storage).
+
+**The Hangfire dashboard is opt-in and authorized.** Registering the recurring job and exposing the dashboard
+are separate: the job runs wherever `Hangfire:Enabled` is true, while `/hangfire` is mapped only when
+`Hangfire:DashboardEnabled` is *also* true (off everywhere by default), behind
+`HangfireDashboardAuthorizationFilter` (Admin/SuperAdmin). It has no authorization of its own, and it can
+enqueue, requeue and delete jobs, so an open one is remote control of the queue.
+
+Two ordering constraints, both load-bearing: the dashboard is mapped **after `UseAuthentication()`** — earlier,
+`HttpContext.User` is still anonymous and the filter rejects everyone including real admins — and the JWT
+`OnMessageReceived` hook accepts `?access_token=` on `/hangfire`, because a browser navigating to it sends no
+`Authorization` header.
 
 ### Infrastructure notes
 
@@ -227,6 +251,13 @@ GET callback, and both funnel into `HandleWebhookAsync`, which must stay **idemp
 - Serilog writes to console and `logs/easyfind_api_log.txt` at **Information**, with `Microsoft`, `System`
   and EF Core overridden to `Warning` so request noise doesn't bury application logs.
 - `Nullable` is **disabled** in `EasyFind.Api` but enabled in both test projects.
+- **Health checks are split, and the split is the point.** `/health` is **liveness** — it runs no checks at
+  all (`Predicate = _ => false`), just proves the process answers, and it is what the ALB target group probes.
+  `/health/ready` is **readiness**, running everything tagged `"ready"` (currently Postgres), and is for
+  monitoring and post-deploy checks. Never point the load balancer at readiness: a dependency check there
+  fails on every task at once during an RDS blip, the ALB drains the whole service, and a recoverable
+  database hiccup becomes a full outage that outlives it. `OperationalHardeningTests` asserts liveness stays
+  green while the database is unreachable.
 
 ### Validation and error shape
 
@@ -256,10 +287,12 @@ blocks the deploy.
 
 - `EasyFind.UnitTests` — xUnit + FluentAssertions, pure functions only (`ListingScorerTests`). Note these
   test `ListingScorer`, which production does not call; see the scoring note above.
-- `EasyFind.IntegrationTests` — 21 tests that boot the real app over **SQLite in-memory** and drive real HTTP
+- `EasyFind.IntegrationTests` — tests that boot the real app over **SQLite in-memory** and drive real HTTP
   requests. `FeedGatingTests` covers the paywall from both sides plus the authorization chokepoint,
   `SubscriptionWebhookTests` covers Chapa idempotency and stacking, `PhoneChangeTests` covers the
-  UserName/PhoneNumber invariant end to end.
+  UserName/PhoneNumber invariant end to end, and `OperationalHardeningTests` covers the Program.cs
+  decisions that only fail in production — liveness surviving an unreachable database, the Hangfire
+  dashboard refusing anonymous and non-admin callers, and the issued access token expiring in hours.
 
 **Working on the harness** — four things it has to fight, all documented in `CustomWebApplicationFactory`:
 
