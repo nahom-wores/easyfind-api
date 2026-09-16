@@ -104,31 +104,57 @@ public class AuthController(ITokenService tokenService) : ApiControllerBase
 
     // Token refresh/revoke talk straight to ITokenService — they are token
     // plumbing, not a use case of their own.
+    // Exchanges a refresh token for a new pair. Deliberately NOT [Authorize]:
+    // it is called precisely when the access token has expired.
+    //
+    // The refresh token is SINGLE-USE — a success rotates it and invalidates the
+    // one presented. Re-presenting a consumed token revokes the entire chain and
+    // signs the user out, so a client must serialise its refreshes (one in
+    // flight at a time) and must persist the new refresh token before using it.
+    //
+    // FIXED CONTRACT: this used to answer 200 for both outcomes. The failure path
+    // returned `new TokenDto()`, whose IsSuccess defaulted to true, while the
+    // success path never set the envelope's IsSuccess at all — so a client could
+    // only tell the two apart by testing whether Result.AccessToken was null.
+    // Success is now 200 with IsSuccess true; every failure is 401.
+    //
+    // The success BODY is unchanged, so a client still keying off
+    // Result.AccessToken keeps working — which matters because mobile users
+    // update on their own schedule and old versions will hit this for months.
     [HttpPost("refresh-token")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<ApiResponse>> RefreshAccessToken([FromBody] TokenDto tokenDto)
     {
         var response = new ApiResponse();
-        if (ModelState.IsValid)
-        {
-            var tokenDtoResponse = await tokenService.RefreshAccessToken(tokenDto);
-            if (tokenDtoResponse == null)
-            {
-                response.IsSuccess = false;
-                response.Errors.Add("Invalid Token");
-                return BadRequest(response);
-            }
 
-            response.Result = tokenDtoResponse;
-            return Ok(response);
-        }
-        else
+        if (!ModelState.IsValid || string.IsNullOrWhiteSpace(tokenDto?.RefreshToken))
         {
             response.IsSuccess = false;
-            response.Result = "Invalid Input";
+            response.Errors.Add("A refresh token is required.");
             return BadRequest(response);
         }
+
+        var tokenDtoResponse = await tokenService.RefreshAccessToken(tokenDto);
+
+        // Belt and braces: treat a missing access token as failure even if the
+        // flag ever says otherwise. These two cannot disagree today, and if they
+        // ever do, refusing is the safe direction.
+        if (tokenDtoResponse is not { IsSuccess: true }
+            || string.IsNullOrEmpty(tokenDtoResponse.AccessToken))
+        {
+            response.IsSuccess = false;
+            response.Errors.Add(string.IsNullOrWhiteSpace(tokenDtoResponse?.Message)
+                ? "Invalid or expired refresh token. Please sign in again."
+                : tokenDtoResponse.Message);
+
+            return Unauthorized(response);
+        }
+
+        response.IsSuccess = true;
+        response.Result = tokenDtoResponse;
+        return Ok(response);
     }
 
     [HttpPost("revoke")]

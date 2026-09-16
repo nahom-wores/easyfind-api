@@ -233,20 +233,24 @@ public class HangfireDashboardAuthTests : IAsyncLifetime
     }
 
     // The cookie carries the token itself (no shared Data Protection keys across
-    // ECS tasks), so an expiring token must close the session rather than
-    // outliving itself.
+    // ECS tasks), so the session cannot outlive the token inside it — the cookie
+    // path has to re-check expiry on every request, not just at sign-in.
+    //
+    // Asserted by presenting an already-expired token as the cookie rather than
+    // by minting a short-lived one and sleeping past it: a wall-clock race is
+    // decided by how loaded the machine is, and the sleeping version did fail
+    // spuriously on a busy one.
     [Fact]
     public async Task SessionDies_WhenTheTokenInsideItExpires()
     {
-        var shortLived = TokenFor(TimeSpan.FromSeconds(2), AppRoles.Admin);
-        var cookie = SessionCookieFrom(await SignInAsync(shortLived));
+        var live = SessionCookieFrom(await SignInAsync(TokenFor(AppRoles.Admin)));
+        (await GetDashboardAsync(live)).StatusCode.Should().Be(HttpStatusCode.OK,
+            "a session holding a live token opens the dashboard");
 
-        (await GetDashboardAsync(cookie)).StatusCode.Should().Be(HttpStatusCode.OK);
+        var expired = $"yisru_hangfire_session={TokenFor(TimeSpan.FromMinutes(-5), AppRoles.Admin)}";
 
-        await Task.Delay(TimeSpan.FromSeconds(3));
-
-        (await GetDashboardAsync(cookie)).StatusCode.Should().Be(HttpStatusCode.Unauthorized,
-            "the session cannot outlive the token it was minted from");
+        (await GetDashboardAsync(expired)).StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+            "the same cookie with an expired token inside it must not");
     }
 
     [Fact]

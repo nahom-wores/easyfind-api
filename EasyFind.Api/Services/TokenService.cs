@@ -29,15 +29,18 @@ namespace EasyFind.Api.Services
 
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly ApplicationDbContext _db;
+        private readonly ILogger<TokenService> _logger;
         private readonly string _secretKey;
         private readonly TimeSpan _accessTokenLifetime;
 
         public TokenService(UserManager<ApplicationUser> userManager,
             IConfiguration configuration,
-            ApplicationDbContext db)
+            ApplicationDbContext db,
+            ILogger<TokenService> logger)
         {
             this._userManager = userManager;
             this._db = db;
+            this._logger = logger;
             _secretKey = configuration.GetValue<string>("JwtConfig:Secret");
 
             var minutes = configuration.GetValue("JwtConfig:AccessTokenMinutes", DefaultAccessTokenMinutes);
@@ -94,16 +97,28 @@ namespace EasyFind.Api.Services
             return tokenHandler.WriteToken(token);
         }
 
+        // Every failure returns IsSuccess = false and a message; AuthController
+        // turns that into a 401. The caller must not have to infer failure from a
+        // null AccessToken, which is what it used to require.
+        //
+        // The message is the SAME for every failure on purpose. "No such token",
+        // "already used" and "belongs to someone else" are different facts about
+        // what an attacker just guessed, and the client has one action for all of
+        // them anyway: sign in again. The specifics go to the log.
+        private const string RefreshFailedMessage =
+            "Invalid or expired refresh token. Please sign in again.";
+
         public async Task<TokenDto> RefreshAccessToken(TokenDto tokenDto)
         {
             // Find an existing refresh token
             var existingRefreshToken = await _db.RefreshTokens.FirstOrDefaultAsync(x => x.Refresh_Token == tokenDto.RefreshToken);
             if (existingRefreshToken == null)
             {
-                return new TokenDto();
+                _logger.LogInformation("Refresh attempted with an unrecognised refresh token.");
+                return Failed();
             }
-            // Instead of failing immediately if the AccessToken is missing/malformed, 
-            // we only check it if it's actually provided. 
+            // Instead of failing immediately if the AccessToken is missing/malformed,
+            // we only check it if it's actually provided.
             // The RefreshToken itself is the primary proof of identity here.
             if (!string.IsNullOrEmpty(tokenDto.AccessToken))
             {
@@ -112,7 +127,12 @@ namespace EasyFind.Api.Services
                 {
                     // If the access token is provided but belongs to a different user/chain, it's fraud
                     await MarkTokenAsInvalid(existingRefreshToken);
-                    return new TokenDto();
+
+                    _logger.LogWarning(
+                        "Refresh for user {UserId} sent an access token from a different chain; token invalidated.",
+                        existingRefreshToken.UserId);
+
+                    return Failed();
                 }
             }
 
@@ -122,9 +142,19 @@ namespace EasyFind.Api.Services
             {
                 // If someone uses an invalid token, revoke the whole chain for safety
                 await MarkAllTokenInChainAsInvalid(existingRefreshToken.UserId, existingRefreshToken.JwtTokenId);
-                return new TokenDto();
+
+                // Logged at Warning because this is the one that signs a user out
+                // completely, and the usual cause is not an attacker but a client
+                // refreshing twice concurrently — the second request presents the
+                // token the first just consumed. Without this line that support
+                // ticket has nothing behind it.
+                _logger.LogWarning(
+                    "Refresh token for user {UserId} was already used or expired; whole chain {ChainId} revoked.",
+                    existingRefreshToken.UserId, existingRefreshToken.JwtTokenId);
+
+                return Failed();
             }
-          
+
 
             // replace old refresh with a new one with updated expire date
             var newRefreshToken = await CreateNewRefreshToken(existingRefreshToken.UserId, existingRefreshToken.JwtTokenId);
@@ -136,7 +166,9 @@ namespace EasyFind.Api.Services
                 .FirstOrDefaultAsync(x => x.Id == existingRefreshToken.UserId);
             if (applicationUser == null)
             {
-                return new TokenDto();
+                _logger.LogWarning("Refresh token {ChainId} points at a user that no longer exists.",
+                    existingRefreshToken.JwtTokenId);
+                return Failed();
             }
 
             var newAccessToken = await GenerteAccessToken(applicationUser, existingRefreshToken.JwtTokenId);
@@ -148,6 +180,12 @@ namespace EasyFind.Api.Services
                 IsSuccess = true
             };
         }
+
+        private static TokenDto Failed() => new()
+        {
+            IsSuccess = false,
+            Message = RefreshFailedMessage
+        };
 
         public async Task RevokeRefreshToken(TokenDto tokenDto)
         {

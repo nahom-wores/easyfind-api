@@ -117,6 +117,16 @@ the same reason — one path, one shape. Don't return raw `Ok()`/`NotFound()` fr
 fields — and `request-otp` answers **201**, not 200. The mobile client depends on those exact bodies, so
 moving them onto `Result` is a client-coordinated breaking change, not a tidy-up. The handlers say so too.
 
+**`refresh-token` used to be a third shape, and was actively misleading.** It answered **200 for both
+outcomes**: the failure path returned a bare `TokenDto` whose `IsSuccess` defaulted to `true`, while the
+success path never set the envelope's `IsSuccess` at all — so both said `isSuccess: false` outside and
+`true` inside, and the only real signal was whether `result.accessToken` was null. Success is now 200 with
+`IsSuccess` true, a missing refresh token is 400, and every rejected credential is **401**. `TokenDto.IsSuccess`
+now defaults to `false`, which is what made the original bug possible.
+
+The success **body** is deliberately unchanged, so a client keying off `result.accessToken` keeps working —
+old app versions will hit this endpoint for months. `RefreshTokenTests` pins all of it.
+
 ### The feed is the core of the product
 
 `Features/Listings/Queries/GetFeedHandler.cs` — read this first when touching listings, caching, or
@@ -151,6 +161,12 @@ feed DTO but never populated, so feed items carry no apply link even for paid us
   The client is expected to call `/auth/refresh-token` on a 401; `RefreshAccessToken` *reads* the old token's
   claims rather than validating them, so an expired access token still refreshes cleanly. Don't raise this to
   work around a client that hasn't implemented refresh.
+- **Refresh tokens are single-use, and reuse revokes the whole chain.** A successful refresh issues a new
+  refresh token and invalidates the one presented; re-presenting a consumed one calls
+  `MarkAllTokenInChainAsInvalid`, signing the user out entirely. The usual cause is not an attacker but a
+  client refreshing **concurrently** — two requests 401 at once, the second sends what the first just spent.
+  Clients must serialise refreshes (one in flight, others await it) and persist the rotated token. That
+  revocation is logged at Warning; it is the only trace a "why was I logged out?" report will have.
 - **Never change `ApplicationUser.PhoneNumber` without also changing `UserName`.** The two sign-in steps look
   the account up by different columns — `RequestOtpHandler` uses `FindByNameAsync(phone)` (UserName),
   `VerifyOtpHandler` queries `PhoneNumber` — and `RequestOtpHandler` *creates* an account when the lookup
