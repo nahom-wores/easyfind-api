@@ -52,16 +52,42 @@ public static class HangfireDashboardAuth
     public static IApplicationBuilder UseHangfireDashboardAuth(this IApplicationBuilder app)
         => app.Use(async (context, next) =>
         {
-            if (context.Request.Path.StartsWithSegments(DashboardPath)
-                && context.Request.Cookies.TryGetValue(CookieName, out var token)
+            if (!context.Request.Path.StartsWithSegments(DashboardPath))
+            {
+                await next();
+                return;
+            }
+
+            if (context.Request.Cookies.TryGetValue(CookieName, out var token)
                 && !string.IsNullOrWhiteSpace(token))
             {
                 var principal = Validate(context, token);
                 if (principal != null) context.User = principal;
             }
 
+            // Send a person who navigated here to the login form.
+            //
+            // This has to happen HERE rather than in the dashboard's
+            // authorization filter: Hangfire sets its own 401 after the filter
+            // returns false, overwriting the status while leaving the Location
+            // header in place, and a browser does not follow a Location on a
+            // 401 — you get a blank error page instead of the form.
+            //
+            // Only for an HTML GET. Redirecting the dashboard's own CSS, JS and
+            // stats polling would answer them with a login page and quietly
+            // corrupt the view instead of failing honestly.
+            if (!IsDashboardAdmin(context.User) && WantsHtml(context.Request))
+            {
+                context.Response.Redirect(LoginPath);
+                return;
+            }
+
             await next();
         });
+
+    private static bool WantsHtml(HttpRequest request)
+        => HttpMethods.IsGet(request.Method)
+           && request.Headers.Accept.ToString().Contains("text/html", StringComparison.OrdinalIgnoreCase);
 
     // The login branch. Mapped before the dashboard so Hangfire's own middleware
     // — which answers every unrecognised path under /hangfire with a 404 —

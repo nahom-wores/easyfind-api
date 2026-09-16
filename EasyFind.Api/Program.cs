@@ -381,12 +381,24 @@ var app = builder.Build();
 // Registering the recurring job is separate from exposing the dashboard: the
 // job must run wherever Hangfire is enabled, the dashboard is opt-in. The
 // dashboard itself is mapped further down, after authentication — see there.
+//
+// Resolved from DI (IRecurringJobManager) rather than called through the static
+// RecurringJob.AddOrUpdate. The static API reads JobStorage.Current, which is
+// only populated as a SIDE EFFECT of something else resolving Hangfire's
+// services — UseHangfireDashboard used to do it, purely because it happened to
+// sit on the line above. Moving the dashboard below UseAuthentication left
+// nothing to initialise storage and the app crashed on boot with "Current
+// JobStorage instance has not been initialized yet". Going through DI does not
+// care what order the pipeline is assembled in.
 if (hangfireEnabled)
 {
-    RecurringJob.AddOrUpdate<SubscriptionExpiryJob>(
-        "subscription-expiry", // unique job id
-        job => job.RunAsync(), // what to call
-        Cron.Daily(2)); // when: every day at 02:00 UTC
+    using var scope = app.Services.CreateScope();
+
+    scope.ServiceProvider.GetRequiredService<IRecurringJobManager>()
+        .AddOrUpdate<SubscriptionExpiryJob>(
+            "subscription-expiry", // unique job id
+            job => job.RunAsync(), // what to call
+            Cron.Daily(2)); // when: every day at 02:00 UTC
 }
 
 if (app.Environment.IsDevelopment() || app.Environment.IsProduction())

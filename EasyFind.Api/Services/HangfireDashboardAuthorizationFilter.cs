@@ -13,23 +13,9 @@ namespace EasyFind.Api.Services;
 // token directly.
 public class HangfireDashboardAuthorizationFilter : IDashboardAuthorizationFilter
 {
+    // Pure yes/no, with no side effects. Sending someone to the login form is
+    // UseHangfireDashboardAuth's job, because Hangfire overwrites the status
+    // code after this returns false and would turn a redirect into a bare 401.
     public bool Authorize(DashboardContext context)
-    {
-        var httpContext = context.GetHttpContext();
-
-        if (HangfireDashboardAuth.IsDashboardAdmin(httpContext.User))
-            return true;
-
-        // Send a person to the login form rather than leaving them at a blank
-        // 401 — but only for a page they navigated to. Redirecting the
-        // dashboard's own CSS, JS and stats polling would answer them with HTML
-        // and quietly corrupt the page instead of failing honestly.
-        if (HttpMethods.IsGet(httpContext.Request.Method)
-            && httpContext.Request.Headers.Accept.ToString().Contains("text/html"))
-        {
-            httpContext.Response.Redirect(HangfireDashboardAuth.LoginPath);
-        }
-
-        return false;
-    }
+        => HangfireDashboardAuth.IsDashboardAdmin(context.GetHttpContext().User);
 }
