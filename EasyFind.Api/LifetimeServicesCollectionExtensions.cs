@@ -1,4 +1,5 @@
-﻿using EasyFind.Api.Features.Admin.Commands;
+﻿using Amazon.SQS;
+using EasyFind.Api.Features.Admin.Commands;
 using EasyFind.Api.Features.Admin.Queries;
 using EasyFind.Api.Features.Applications.Commands;
 using EasyFind.Api.Features.Applications.Queries;
@@ -69,7 +70,8 @@ public static class LifetimeServicesCollectionExtensions
         services.AddScoped<IChapaWebhookVerifier, ChapaWebhookVerifier>();
         services.AddScoped<ICurrentUser, CurrentUser>();         // claims of the caller
         services.AddScoped<IOtpThrottle, OtpThrottleService>();  // per-phone OTP limits
-
+        services.AddAWSService<IAmazonSQS>();
+        services.AddScoped<INotificationPublisher, NotificationPublisher>();
         // Request validators, enforced by ValidationFilter. Registered by hand
         // like everything else: a DTO with no validator here is simply not
         // validated beyond its DataAnnotations.
