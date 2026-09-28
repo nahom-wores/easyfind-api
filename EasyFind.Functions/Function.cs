@@ -33,12 +33,27 @@ public class Function
     /// <returns></returns>
     public async Task<SQSBatchResponse> FunctionHandler(SQSEvent evnt, ILambdaContext context)
     {
+        // Stop short of the Lambda timeout. If the invocation itself times out,
+        // Lambda discards our response and the WHOLE batch returns to the queue —
+        // including messages whose SMS already went out, which then get sent again.
+        // Finishing early lets us report exactly what didn't run.
+        var budget = context.RemainingTime - SafetyBuffer;
+        using var cts = new CancellationTokenSource(budget > TimeSpan.Zero ? budget : TimeSpan.Zero);
+
         var failures = new List<SQSBatchResponse.BatchItemFailure>();
         foreach(var message in evnt.Records)
         {
+            if (cts.IsCancellationRequested)
+            {
+                // Out of time: never started, so hand it straight back for retry.
+                context.Logger.LogWarning($"Out of time, returning {message.MessageId} unprocessed");
+                failures.Add(new SQSBatchResponse.BatchItemFailure { ItemIdentifier = message.MessageId });
+                continue;
+            }
+
             try
             {
-                await ProcessMessageAsync(message, context);
+                await ProcessMessageAsync(message, context, cts.Token);
             }
             catch (Exception e)
             {
@@ -50,7 +65,8 @@ public class Function
         return new SQSBatchResponse { BatchItemFailures = failures };
     }
 
-    private async Task ProcessMessageAsync(SQSEvent.SQSMessage message, ILambdaContext context)
+    private async Task ProcessMessageAsync(SQSEvent.SQSMessage message, ILambdaContext context,
+        CancellationToken ct)
     {
         var envelope = JsonSerializer.Deserialize<NotificationMessage>(message.Body)
                        ?? throw new InvalidOperationException("Empty message body");
@@ -59,9 +75,9 @@ public class Function
         {
             case NotificationTypes.PaymentSuccess:
                 var payload = JsonSerializer.Deserialize<PaymentSuccessPayload>(envelope.Payload)!;
-                var sms = await GetSmsAsync();
+                var sms = await GetSmsAsync(ct);
                 await sms.SendAsync(payload.PhoneNumber,
-                    $"Payment of {payload.AmountEtb} ETB received. Your Yisru {payload.Tier} plan is now active. Thank you!");
+                    $"Payment of {payload.AmountEtb} ETB received. Your Yisru {payload.Tier} plan is now active. Thank you!", ct);
                 context.Logger.LogInformation($"[payment_success] SMS sent for user {payload.UserId}");
                 break;
 
@@ -70,17 +86,21 @@ public class Function
         }
         await Task.CompletedTask;
     }
-    // Reused across warm invocations — created once per cold start
-    private static readonly HttpClient Http = new();
+    // How long before the Lambda timeout we stop starting new work.
+    private static readonly TimeSpan SafetyBuffer = TimeSpan.FromSeconds(2);
+
+    // Reused across warm invocations — created once per cold start. The default
+    // 100s timeout would outlive the whole 15s invocation; 5s bounds one hung send.
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(5) };
     private AfroMessageClient? _sms;
 
-    private async Task<AfroMessageClient> GetSmsAsync()
+    private async Task<AfroMessageClient> GetSmsAsync(CancellationToken ct)
     {
         if (_sms is not null) return _sms;   // already loaded on a warm start
 
         using var secrets = new AmazonSecretsManagerClient();
         var secret = await secrets.GetSecretValueAsync(
-            new GetSecretValueRequest { SecretId = "yisru/prod/app" });
+            new GetSecretValueRequest { SecretId = "yisru/prod/app" }, ct);
 
         var values = JsonSerializer.Deserialize<Dictionary<string, string>>(secret.SecretString)!;
 
