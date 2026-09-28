@@ -94,13 +94,18 @@ public class Function
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(5) };
     private AfroMessageClient? _sms;
 
+    // A secret holding ONLY the AfroMessage__* keys. Not the app-wide
+    // yisru/prod/app, which also carries the DB connection string and JWT key.
+    private static readonly string SmsSecretId =
+        Environment.GetEnvironmentVariable("SMS_SECRET_ID") is { Length: > 0 } id ? id : "yisru/prod/afromessage";
+
     private async Task<AfroMessageClient> GetSmsAsync(CancellationToken ct)
     {
         if (_sms is not null) return _sms;   // already loaded on a warm start
 
         using var secrets = new AmazonSecretsManagerClient();
         var secret = await secrets.GetSecretValueAsync(
-            new GetSecretValueRequest { SecretId = "yisru/prod/app" }, ct);
+            new GetSecretValueRequest { SecretId = SmsSecretId }, ct);
 
         var values = JsonSerializer.Deserialize<Dictionary<string, string>>(secret.SecretString)!;
 

@@ -40,7 +40,7 @@ gives failed sends automatic retries plus a dead-letter queue.
           │    for each record: deserialize NotificationMessage → switch on Type              │
           │      "payment_success" → AfroMessageClient.SendAsync ──► api.afromessage.com      │
           │      unknown type      → throw  (reported as a batch-item failure)                │
-          │  cold start: GetSecretValue(yisru/prod/app) → AfroMessage__* keys                 │
+          │  cold start: GetSecretValue($SMS_SECRET_ID) → AfroMessage__* keys                 │
           └───────────────────────────────────────────────────────────────────────────────────┘
                execution role: yisru-functions-role
                (AWSLambdaSQSQueueExecutionRole + inline yisru-functions-secrets)
@@ -62,7 +62,7 @@ Projects involved:
 | SQS `yisru-notifications-dlq` | Standard queue, **14-day** retention. | For standard queues a message keeps its *original* enqueue timestamp when moved to the DLQ, so its 14 days start from when the API sent it, not from when it failed. Nothing consumes this queue automatically. |
 | Lambda `yisru-notifications-processor` | Runtime `dotnet10`, 512 MB, timeout **15s**, handler `EasyFind.Functions::EasyFind.Functions.Function::FunctionHandler`. | Settings live in `EasyFind.Functions/aws-lambda-tools-defaults.json`. |
 | Event source mapping (queue → Lambda) | Batch size **10**, `FunctionResponseTypes = [ReportBatchItemFailures]`. | Configured in AWS, not in code. `ReportBatchItemFailures` is load-bearing: without it, Lambda ignores the returned `SQSBatchResponse` and deletes the whole batch as soon as the invocation returns, so failed sends are silently dropped. |
-| Secret `yisru/prod/app` | JSON key/value secret shared with the API. The Lambda reads `AfroMessage__ApiToken` (required), `AfroMessage__IdentifierId`, `AfroMessage__SenderName`. | Loaded once per cold start and cached in the Lambda instance. |
+| Secret `yisru/prod/afromessage` | JSON key/value secret holding **only** the AfroMessage keys, separate from the API's `yisru/prod/app`. The Lambda reads `AfroMessage__ApiToken` (required), `AfroMessage__IdentifierId`, `AfroMessage__SenderName`. | Name comes from the Lambda env var `SMS_SECRET_ID` (default `yisru/prod/afromessage`). Loaded once per cold start and cached in the Lambda instance, so after rotating the token, warm instances keep the old one until they are recycled. The API still reads its own copy of these keys from `yisru/prod/app`, so a rotation has to update both. |
 
 ### IAM split
 
@@ -71,7 +71,7 @@ The producer and the consumer have separate roles, each with only its half of th
 | Principal | Role | Permissions |
 |---|---|---|
 | API (ECS tasks) | `yisru-task-role` | Inline `yisru-sqs-send`: `sqs:SendMessage` on `yisru-notifications` **only**. The API cannot read, delete or purge messages, and cannot touch the DLQ. |
-| Lambda | `yisru-functions-role` | AWS-managed `AWSLambdaSQSQueueExecutionRole` (`sqs:ReceiveMessage`, `DeleteMessage`, `GetQueueAttributes` + CloudWatch Logs). Inline `yisru-functions-secrets`: `secretsmanager:GetSecretValue` on `yisru/prod/app`. |
+| Lambda | `yisru-functions-role` | AWS-managed `AWSLambdaSQSQueueExecutionRole` (`sqs:ReceiveMessage`, `DeleteMessage`, `GetQueueAttributes` + CloudWatch Logs). Inline `yisru-functions-secrets`: `secretsmanager:GetSecretValue` on `yisru/prod/afromessage` only. |
 
 The Lambda has no network path to, or credentials for, the database. Everything it needs has to be in the
 message.
@@ -226,8 +226,8 @@ These come from the 2026-09-28 audit, and each has a proposed fix there. The fir
    queue, including messages already sent.
 5. **Queue URL is hardcoded** in `NotificationPublisher`. Every environment, including a developer machine
    with AWS credentials, publishes to the production queue.
-6. **The Lambda reads the whole `yisru/prod/app` secret**, including the database connection string and JWT
-   signing key, when it needs three AfroMessage values.
+6. **The AfroMessage token exists in two secrets.** The API reads it from `yisru/prod/app`, and the Lambda from
+   `yisru/prod/afromessage`. Rotating it means updating both.
 7. **No correlation ID.** A log line in the API cannot be joined to the Lambda's log line for the same
    notification except by timestamp.
 8. **No alarm on the DLQ.** Failed notifications sit there unnoticed and expire after 14 days.
