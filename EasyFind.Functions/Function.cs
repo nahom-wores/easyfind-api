@@ -57,7 +57,7 @@ public class Function
 
         switch (envelope.Type)
         {
-            case "payment_success":
+            case NotificationTypes.PaymentSuccess:
                 var payload = JsonSerializer.Deserialize<PaymentSuccessPayload>(envelope.Payload)!;
                 var sms = await GetSmsAsync();
                 await sms.SendAsync(payload.PhoneNumber,

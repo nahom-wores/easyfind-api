@@ -17,8 +17,9 @@ public class NotificationPublisher(IAmazonSQS sqs) : INotificationPublisher
     {
         var message = new NotificationMessage
         {
-            Type =  "Payment_success",
-            Version =  1,
+            Type = NotificationTypes.PaymentSuccess,
+            Version = 1,
+            IdempotencyKey = $"{NotificationTypes.PaymentSuccess}:{payload.TxRef}",
             Payload = JsonSerializer.Serialize(payload),
         };
 
