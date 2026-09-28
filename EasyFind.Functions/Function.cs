@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Amazon.Lambda.Core;
 using Amazon.Lambda.SQSEvents;
+using Amazon.SecretsManager;
+using Amazon.SecretsManager.Model;
 using EasyFind.Contracts;
 
 
@@ -57,14 +59,37 @@ public class Function
         {
             case "payment_success":
                 var payload = JsonSerializer.Deserialize<PaymentSuccessPayload>(envelope.Payload)!;
-                context.Logger.LogInformation(
-                    $"[payment_success v{envelope.Version}] user={payload.UserId} phone={payload.PhoneNumber} amount={payload.AmountEtb}");
-                // Step later: actually send SMS + email here
+                var sms = await GetSmsAsync();
+                await sms.SendAsync(payload.PhoneNumber,
+                    $"Payment of {payload.AmountEtb} ETB received. Your Yisru {payload.Tier} plan is now active. Thank you!");
+                context.Logger.LogInformation($"[payment_success] SMS sent for user {payload.UserId}");
                 break;
 
             default:
                 throw new InvalidOperationException($"Unknown message type: {envelope.Type}");
         }
         await Task.CompletedTask;
+    }
+    // Reused across warm invocations — created once per cold start
+    private static readonly HttpClient Http = new();
+    private AfroMessageClient? _sms;
+
+    private async Task<AfroMessageClient> GetSmsAsync()
+    {
+        if (_sms is not null) return _sms;   // already loaded on a warm start
+
+        using var secrets = new AmazonSecretsManagerClient();
+        var secret = await secrets.GetSecretValueAsync(
+            new GetSecretValueRequest { SecretId = "yisru/prod/app" });
+
+        var values = JsonSerializer.Deserialize<Dictionary<string, string>>(secret.SecretString)!;
+
+        _sms = new AfroMessageClient(
+            Http,
+            values["AfroMessage__ApiToken"],
+            values.GetValueOrDefault("AfroMessage__IdentifierId", ""),
+            values.GetValueOrDefault("AfroMessage__SenderName", ""));
+
+        return _sms;
     }
 }
