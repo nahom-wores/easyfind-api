@@ -51,7 +51,7 @@ Projects involved:
 | Project | Role |
 |---|---|
 | `EasyFind.Contracts` | Message types shared by producer and consumer: `NotificationMessage` (envelope) and `PaymentSuccessPayload`. No dependencies. |
-| `EasyFind.Api` | Producer. `Services/NotificationPublisher.cs` behind `Services/IServices/INotificationPublisher.cs`, registered in `AddInfrastructure` together with `AddAWSService<IAmazonSQS>()`. |
+| `EasyFind.Api` | Producer. `Services/NotificationPublisher.cs` behind `Services/IServices/INotificationPublisher.cs`, registered in `AddInfrastructure` together with `AddAWSService<IAmazonSQS>()`. Sends to `Notifications:QueueUrl`, which is validated at startup. Integration tests swap in `FakeNotificationPublisher`. |
 | `EasyFind.Functions` | Consumer Lambda. `Function.cs` dispatches, `AfroMessageClient.cs` calls AfroMessage. |
 
 ### AWS resources (eu-central-1, account 454252678518)
@@ -224,8 +224,13 @@ These come from the 2026-09-28 audit, and each has a proposed fix there. The fir
 4. **The whole batch shares a 15s timeout.** Up to 10 messages are sent one after another, and the
    `HttpClient` has the default 100s timeout. If the invocation times out, the entire batch returns to the
    queue, including messages already sent.
-5. **Queue URL is hardcoded** in `NotificationPublisher`. Every environment, including a developer machine
-   with AWS credentials, publishes to the production queue.
+5. **Every environment needs `Notifications:QueueUrl`.** It has no default, and the API refuses to start
+   without it. Production gets it as the env var `Notifications__QueueUrl`, which **must be added to the ECS
+   task definition (or `yisru/prod/app`) before merging** the change that introduced it, or the new tasks
+   fail at startup. Locally, put a placeholder in `appsettings.Development.json`, e.g.
+   `"Notifications": { "QueueUrl": "https://sqs.invalid/local-dev-placeholder" }`. That file is git-ignored, so
+   each developer adds it themselves. With a placeholder, publishes fail and are logged, and nothing is sent.
+   Never point it at the production queue.
 6. **The AfroMessage token exists in two secrets.** The API reads it from `yisru/prod/app`, and the Lambda from
    `yisru/prod/afromessage`. Rotating it means updating both.
 7. **No correlation ID.** A log line in the API cannot be joined to the Lambda's log line for the same

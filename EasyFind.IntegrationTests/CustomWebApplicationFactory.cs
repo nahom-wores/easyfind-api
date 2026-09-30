@@ -89,6 +89,7 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 ["Chapa:SecretKey"] = "test",
                 ["Chapa:WebhookSecret"] = "test",
                 ["Chapa:BaseUrl"] = "https://chapa.invalid",
+                ["Notifications:QueueUrl"] = "https://sqs.invalid/test-queue",
             });
         });
 
@@ -132,6 +133,11 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
             services.RemoveAll<IChapaClient>();
             services.AddSingleton<FakeChapaClient>();
             services.AddSingleton<IChapaClient>(sp => sp.GetRequiredService<FakeChapaClient>());
+
+            // Nor SQS: the real publisher would try to send to AWS.
+            services.RemoveAll<INotificationPublisher>();
+            services.AddSingleton<FakeNotificationPublisher>();
+            services.AddSingleton<INotificationPublisher>(sp => sp.GetRequiredService<FakeNotificationPublisher>());
 
             using var sp = services.BuildServiceProvider();
             using var scope = sp.CreateScope();

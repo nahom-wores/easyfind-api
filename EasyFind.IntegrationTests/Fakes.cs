@@ -1,10 +1,11 @@
 ﻿using System.Collections.Concurrent;
 using EasyFind.Api.Models.Subscriptions;
 using EasyFind.Api.Services.IServices;
+using EasyFind.Contracts;
 
 namespace EasyFind.IntegrationTests;
 
-// Stand-ins for the two adapters that would otherwise make real network calls.
+// Stand-ins for the adapters that would otherwise make real network calls.
 // Registered as singletons so a test can configure them up front and inspect
 // what the application did with them afterwards.
 
@@ -62,4 +63,17 @@ public class FakeChapaClient : IChapaClient
             TxRef = txRef,
             Reference = reference
         };
+}
+
+public class FakeNotificationPublisher : INotificationPublisher
+{
+    private readonly ConcurrentQueue<PaymentSuccessPayload> _paymentSuccess = new();
+
+    public IReadOnlyCollection<PaymentSuccessPayload> PaymentSuccessPublished => _paymentSuccess.ToArray();
+
+    public Task PublishPaymentSuccessAsync(PaymentSuccessPayload payload, CancellationToken ct = default)
+    {
+        _paymentSuccess.Enqueue(payload);
+        return Task.CompletedTask;
+    }
 }

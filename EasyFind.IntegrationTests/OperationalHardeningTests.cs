@@ -4,7 +4,10 @@ using System.Net.Http.Json;
 using EasyFind.Api.Models.Auth;
 using EasyFind.Api.Services.IServices;
 using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace EasyFind.IntegrationTests;
 
@@ -75,6 +78,27 @@ public class OperationalHardeningTests(CustomWebApplicationFactory factory)
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound,
             "disabling Hangfire must leave no route serving the job queue");
+    }
+
+    // ── No notification queue, no boot ───────────────────────────────────────
+    //
+    // The queue URL used to be hardcoded to production, so every environment
+    // published there. It now has no default at all; if it is unset the app must
+    // refuse to start rather than run and silently drop every payment text.
+    [Fact]
+    public void Startup_Fails_WhenNotificationQueueUrlIsMissing()
+    {
+        using var misconfigured = factory.WithWebHostBuilder(b =>
+            b.ConfigureAppConfiguration((_, config) =>
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Notifications:QueueUrl"] = "",
+                })));
+
+        var boot = () => misconfigured.CreateClient();
+
+        boot.Should().Throw<OptionsValidationException>()
+            .WithMessage("*Notifications:QueueUrl*");
     }
 
     // ── Access tokens expire soon enough to be a revocation window ────────────

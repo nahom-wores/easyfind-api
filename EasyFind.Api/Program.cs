@@ -344,6 +344,14 @@ builder.Services
     .Validate(o => o.DurationDays > 0,
         "Subscription duration must be positive.")
     .ValidateOnStart();
+// No default and no environment exemption: an unset queue URL fails the boot
+// rather than surfacing later as payment texts that silently never send.
+builder.Services
+    .AddOptions<NotificationOptions>()
+    .Bind(builder.Configuration.GetSection(NotificationOptions.SectionName))
+    .Validate(o => !string.IsNullOrWhiteSpace(o.QueueUrl),
+        "Notifications:QueueUrl is required (env var Notifications__QueueUrl).")
+    .ValidateOnStart();
 builder.Services.Configure<DocumentUploadOptions>(
     builder.Configuration.GetSection(DocumentUploadOptions.SectionName));
 
