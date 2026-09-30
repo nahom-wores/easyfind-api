@@ -5,6 +5,7 @@ using EasyFind.Api.Models.Dto.Subscriptions;
 using EasyFind.Api.Models.Options;
 using EasyFind.Api.Models.Subscriptions;
 using EasyFind.Api.Services.IServices;
+using EasyFind.Contracts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -29,6 +30,7 @@ public class ProcessChapaPaymentHandler(
     IChapaClient chapa,
     UserManager<ApplicationUser> userManager,
     IOptions<SubscriptionOptions> subOptions,
+    INotificationPublisher notifications,
     ILogger<ProcessChapaPaymentHandler> logger)
 {
     private readonly SubscriptionOptions _opts = subOptions.Value;
@@ -75,6 +77,7 @@ public class ProcessChapaPaymentHandler(
         // 4. Activate — in a transaction, with the atomic guard 
         // meaning either payment success | subscription created | user updated All happen or NONE happen (Atomicity)
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        ApplicationUser user;
         try
         {
             // Atomic guard: flip to Success ONLY if still Pending.
@@ -127,7 +130,7 @@ public class ProcessChapaPaymentHandler(
             }
 
             // Reflect tier on the user for fast access (feed gating reads this)
-            var user = await userManager.FindByIdAsync(payment.UserId);
+            user = await userManager.FindByIdAsync(payment.UserId);
             if (user != null)
             {
                 user.SubscriptionTier = payment.Tier;
@@ -139,14 +142,58 @@ public class ProcessChapaPaymentHandler(
 
             logger.LogInformation("Subscription activated for user {UserId}, tier {Tier}, tx {TxRef}",
                 payment.UserId, payment.Tier, txRef);
-
-            return Result.Success();
         }
         catch (Exception ex)
         {
             await tx.RollbackAsync(ct);
             logger.LogError(ex, "Failed to activate subscription for {TxRef}", txRef);
             return Result.Failure("Activation failed.", ErrorType.Failure);
+        }
+
+        // 5. Notify. Only reachable by the one delivery that won the guard above,
+        // and only once the activation is committed — so a duplicate callback
+        // publishes nothing, and a rollback can't text the user about a payment
+        // that didn't stick.
+        await PublishPaymentSuccessAsync(payment, user);
+        return Result.Success();
+    }
+
+    // Deliberately outside the try/catch and never throws. The subscription is
+    // already committed: a failure here must not reach the catch above (which
+    // would "roll back" a committed transaction) or turn into a 500 (Chapa would
+    // retry, find the payment already Success, and no-op — so nothing is gained).
+    //
+    // CancellationToken.None because the GET callback comes from the user's
+    // browser; closing the tab must not cancel a publish after the commit.
+    //
+    // A failure here means no SMS for this payment, ever: there is no outbox yet
+    // (see doc.md, Known limitations). The log line is the only trace.
+    private async Task PublishPaymentSuccessAsync(Payment payment, ApplicationUser user)
+    {
+        if (string.IsNullOrWhiteSpace(user?.PhoneNumber))
+        {
+            logger.LogWarning("No phone number for user {UserId}; skipping payment SMS for {TxRef}",
+                payment.UserId, payment.TxRef);
+            return;
+        }
+
+        try
+        {
+            await notifications.PublishPaymentSuccessAsync(new PaymentSuccessPayload
+            {
+                TxRef = payment.TxRef,
+                UserId = payment.UserId,
+                PhoneNumber = user.PhoneNumber,
+                Email = user.Email,
+                AmountEtb = payment.AmountEtb,
+                Tier = payment.Tier.ToString(),
+            }, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Subscription is active but the payment_success notification was not published for {TxRef}",
+                payment.TxRef);
         }
     }
 }

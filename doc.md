@@ -7,16 +7,16 @@ SMS gateway on the request path: it drops a message on an SQS queue and a Lambda
 slow or failing gateway from failing the request that triggered the notification (e.g. a Chapa webhook), and
 gives failed sends automatic retries plus a dead-letter queue.
 
-> **Status (2026-09-28):** the pipeline is deployed but **not yet called** from the payment flow.
-> `INotificationPublisher` is registered but nothing calls it. See [Known limitations](#known-limitations)
-> before wiring it in.
+> **Status (2026-09-30):** wired for `payment_success`. `ProcessChapaPaymentHandler` publishes once per
+> payment, after the activation commits. See [Known limitations](#known-limitations) for what can still go
+> wrong.
 
 ### Architecture
 
 ```
  ┌──────────────────────── ECS: yisru-service (EasyFind.Api) ────────────────────────┐
  │                                                                                   │
- │  ProcessChapaPaymentHandler ──(not wired yet)──► INotificationPublisher           │
+ │  ProcessChapaPaymentHandler ──(after commit)───► INotificationPublisher           │
  │                                                    NotificationPublisher          │
  │                                                    IAmazonSQS.SendMessageAsync    │
  └──────────────────────────────────────────────────────────┬────────────────────────┘
@@ -216,8 +216,11 @@ These come from the 2026-09-28 audit, and each has a proposed fix there. The fir
 1. **Producer and consumer disagree on the type string.** `NotificationPublisher` sends `"Payment_success"`,
    but the Lambda matches `"payment_success"`, and the match is case-sensitive. Once wired, every payment
    notification would fail as an unknown type and end up in the DLQ.
-2. **Not wired.** Nothing calls `INotificationPublisher` yet. Where and how it is called from
-   `ProcessChapaPaymentHandler` decides whether messages can be lost or sent for a payment that rolled back.
+2. **A failed publish loses the SMS.** `ProcessChapaPaymentHandler` publishes after the commit, and
+   only on the delivery that won the `Pending → Success` guard, so duplicate callbacks publish nothing and
+   a rollback texts no one. But if the SQS call itself fails, the error is logged
+   ("…notification was not published for {TxRef}") and nothing retries it. Payments with no phone number
+   are skipped with a warning.
 3. **No idempotency.** SQS is at-least-once, and a Lambda timeout, a retry after a delivered-but-unacknowledged
    send, or a DLQ redrive can all resend an SMS. Nothing deduplicates. The payload carries no `TxRef` or
    message ID to deduplicate on.

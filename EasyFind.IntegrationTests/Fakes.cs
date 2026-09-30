@@ -71,8 +71,12 @@ public class FakeNotificationPublisher : INotificationPublisher
 
     public IReadOnlyCollection<PaymentSuccessPayload> PaymentSuccessPublished => _paymentSuccess.ToArray();
 
+    // Set true to simulate SQS being unreachable.
+    public bool ShouldThrow { get; set; }
+
     public Task PublishPaymentSuccessAsync(PaymentSuccessPayload payload, CancellationToken ct = default)
     {
+        if (ShouldThrow) throw new HttpRequestException("SQS unreachable (simulated)");
         _paymentSuccess.Enqueue(payload);
         return Task.CompletedTask;
     }

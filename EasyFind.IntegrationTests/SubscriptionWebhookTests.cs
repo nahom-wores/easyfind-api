@@ -73,6 +73,60 @@ public class SubscriptionWebhookTests(CustomWebApplicationFactory factory)
     }
 
     [Fact]
+    public async Task DoubleDelivery_PublishesThePaymentSmsExactlyOnce()
+    {
+        // The SMS rides on the same guard as the activation: only the delivery
+        // that flips the payment to Success publishes. A duplicate callback that
+        // published again would text the user twice for one payment.
+        var (userId, txRef) = await SeedPendingPaymentAsync();
+        var chapa = factory.Services.GetRequiredService<FakeChapaClient>();
+        chapa.WillVerifySuccessfully(txRef, ProPrice);
+        var publisher = factory.Services.GetRequiredService<FakeNotificationPublisher>();
+
+        await RunHandlerAsync(h => h.HandleAsync(new ProcessChapaPaymentCommand(txRef)));
+
+        var published = publisher.PaymentSuccessPublished.Where(p => p.TxRef == txRef).ToList();
+        published.Should().ContainSingle("the first successful delivery publishes once");
+        published[0].UserId.Should().Be(userId);
+        published[0].PhoneNumber.Should().NotBeNullOrWhiteSpace();
+        published[0].AmountEtb.Should().Be(ProPrice);
+        published[0].Tier.Should().Be("Pro");
+
+        await RunHandlerAsync(h => h.HandleAsync(new ProcessChapaPaymentCommand(txRef)));
+
+        publisher.PaymentSuccessPublished.Count(p => p.TxRef == txRef).Should().Be(1,
+            "a duplicate callback must publish nothing");
+    }
+
+    [Fact]
+    public async Task PublishFailure_DoesNotFailOrUndoTheActivation()
+    {
+        // The subscription is committed before publishing. If SQS is down, the
+        // payment must still succeed (a 500 would only make Chapa retry into the
+        // idempotency guard) and the user must still be Pro.
+        var (userId, txRef) = await SeedPendingPaymentAsync();
+        var chapa = factory.Services.GetRequiredService<FakeChapaClient>();
+        chapa.WillVerifySuccessfully(txRef, ProPrice);
+        var publisher = factory.Services.GetRequiredService<FakeNotificationPublisher>();
+
+        publisher.ShouldThrow = true;
+        try
+        {
+            var result = await RunHandlerAsync(h => h.HandleAsync(new ProcessChapaPaymentCommand(txRef)));
+            result.IsSuccess.Should().BeTrue("a failed notification must not fail the payment");
+        }
+        finally
+        {
+            publisher.ShouldThrow = false;
+        }
+
+        var payment = await factory.WithDbAsync(db => db.Payments.SingleAsync(p => p.TxRef == txRef));
+        payment.Status.Should().Be(PaymentStatus.Success);
+        var user = await factory.WithDbAsync(db => db.Users.SingleAsync(u => u.Id == userId));
+        user.SubscriptionTier.Should().Be(SubscriptionTier.Pro);
+    }
+
+    [Fact]
     public async Task SuccessfulPayment_MirrorsTierOntoTheUser()
     {
         // The feed reads ApplicationUser.SubscriptionTier, not the Subscription
