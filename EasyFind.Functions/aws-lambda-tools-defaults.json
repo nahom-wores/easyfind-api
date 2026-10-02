@@ -8,6 +8,8 @@
   "profile": "AdministratorAccess-454252678518",
   "region": "eu-central-1",
   "configuration": "Release",
+  "function-name": "yisru-notifications-processor",
+  "function-role": "arn:aws:iam::454252678518:role/yisru-functions-role",
   "function-runtime": "dotnet10",
   "function-memory-size": 512,
   "function-timeout": 15,

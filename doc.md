@@ -43,7 +43,7 @@ gives failed sends automatic retries plus a dead-letter queue.
           │  cold start: GetSecretValue($SMS_SECRET_ID) → AfroMessage__* keys                 │
           └───────────────────────────────────────────────────────────────────────────────────┘
                execution role: yisru-functions-role
-               (AWSLambdaSQSQueueExecutionRole + inline yisru-functions-secrets)
+               (inline yisru-functions-sqs + inline yisru-functions-secrets)
 ```
 
 Projects involved:
@@ -71,7 +71,33 @@ The producer and the consumer have separate roles, each with only its half of th
 | Principal | Role | Permissions |
 |---|---|---|
 | API (ECS tasks) | `yisru-task-role` | Inline `yisru-sqs-send`: `sqs:SendMessage` on `yisru-notifications` **only**. The API cannot read, delete or purge messages, and cannot touch the DLQ. |
-| Lambda | `yisru-functions-role` | AWS-managed `AWSLambdaSQSQueueExecutionRole` (`sqs:ReceiveMessage`, `DeleteMessage`, `GetQueueAttributes` + CloudWatch Logs). Inline `yisru-functions-secrets`: `secretsmanager:GetSecretValue` on `yisru/prod/afromessage` only. |
+| Lambda | `yisru-functions-role` | Inline `yisru-functions-sqs` (below): `sqs:ReceiveMessage`, `DeleteMessage`, `GetQueueAttributes` on `yisru-notifications` only, and CloudWatch Logs on its own log group only. Inline `yisru-functions-secrets`: `secretsmanager:GetSecretValue` on `yisru/prod/afromessage` only. |
+
+`yisru-functions-sqs` replaces the AWS-managed `AWSLambdaSQSQueueExecutionRole`, which grants the same
+actions on **every** queue and log group in the account:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ConsumeNotificationsQueue",
+      "Effect": "Allow",
+      "Action": ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"],
+      "Resource": "arn:aws:sqs:eu-central-1:454252678518:yisru-notifications"
+    },
+    {
+      "Sid": "WriteOwnLogs",
+      "Effect": "Allow",
+      "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
+      "Resource": "arn:aws:logs:eu-central-1:454252678518:log-group:/aws/lambda/yisru-notifications-processor:*"
+    }
+  ]
+}
+```
+
+The Lambda needs nothing on the DLQ: SQS moves failed messages there itself, and a redrive is done by a
+person, not by this role. If the function is renamed, update the log-group ARN, or its logs silently stop.
 
 The Lambda has no network path to, or credentials for, the database. Everything it needs has to be in the
 message.
@@ -136,11 +162,11 @@ dotnet tool install -g Amazon.Lambda.Tools      # once; `dotnet tool update -g A
 aws sso login --profile AdministratorAccess-454252678518
 
 cd EasyFind.Functions
-dotnet lambda deploy-function yisru-notifications-processor --function-role yisru-functions-role
+dotnet lambda deploy-function
 ```
 
-`deploy-function` reads region, runtime, memory, timeout, handler and AWS profile from
-`aws-lambda-tools-defaults.json`. It builds in Release, zips the output and updates the function's code and
+`deploy-function` reads the function name, role, region, runtime, memory, timeout, handler and AWS profile
+from `aws-lambda-tools-defaults.json`. It builds in Release, zips the output and updates the function's code and
 configuration. It does **not** create or modify the SQS trigger or the queues.
 
 After deploying, confirm the trigger is still configured the way the retry logic assumes:
