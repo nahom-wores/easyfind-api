@@ -111,13 +111,19 @@ Every SQS message body is a JSON-serialized `NotificationMessage` envelope:
 
 ```json
 {
+  "MessageId": "3f1c9a2e-…",
+  "IdempotencyKey": "payment_success:easyfind-8c2e…",
   "Type": "payment_success",
   "Version": 1,
-  "Payload": "{\"UserId\":\"…\",\"PhoneNumber\":\"0911223344\",\"Email\":null,\"AmountEtb\":300,\"Tier\":\"Pro\"}"
+  "Payload": "{\"TxRef\":\"easyfind-8c2e…\",\"UserId\":\"…\",\"PhoneNumber\":\"0911223344\",\"Email\":null,\"AmountEtb\":300,\"Tier\":\"Pro\"}"
 }
 ```
 
-- `Type` selects the handler in `Function.ProcessMessageAsync`. The match is **exact and case-sensitive**.
+- `MessageId` is unique per publish, and defaults to a new GUID.
+- `IdempotencyKey` is stable per business event (`payment_success:{txRef}`), so the same payment published
+  or delivered twice carries the same key. **Nothing checks it yet** (Known limitations #2).
+- `Type` selects the handler in `Function.ProcessMessageAsync`. The match is **exact and case-sensitive**,
+  which is why both sides use the constants in `NotificationTypes` rather than literals.
 - `Version` is the payload schema version for that type. It exists so a payload can change shape without
   breaking messages already in flight. The consumer does not read it yet.
 - `Payload` is a **JSON string**, not a nested object. It is deserialized a second time into the type-specific
@@ -130,6 +136,7 @@ Every SQS message body is a JSON-serialized `NotificationMessage` envelope:
 
 | Field | Type | Notes |
 |---|---|---|
+| `TxRef` | string | Our Chapa reference. Source of the `IdempotencyKey`. |
 | `UserId` | string | Used for logging only. |
 | `PhoneNumber` | string | Normalized by `AfroMessageClient`: `+251…` → `251…`, `09…` (10 digits) → `2519…`, anything else is sent as-is. |
 | `Email` | string? | Reserved for the email channel and not used yet. |
@@ -149,8 +156,9 @@ Every SQS message body is a JSON-serialized `NotificationMessage` envelope:
 4. **Deploy the Lambda first**, then the API. If the API goes first, the new messages hit the old Lambda and
    fail as unknown types. They are retried three times and then parked in the DLQ, where they can be
    redriven once the Lambda is updated. That is recoverable, but noisy.
-5. Use the **same `Type` string** on both sides. Put it in a shared constant in `EasyFind.Contracts`, not a
-   literal on each side (see Known limitations #1).
+5. Add the `Type` string to `NotificationTypes` in `EasyFind.Contracts` and use the constant on both sides,
+   never a literal. The two sides drifted once (`"Payment_success"` vs `"payment_success"`), which would have
+   sent every message to the DLQ.
 
 ### Deploying the Lambda
 
@@ -237,35 +245,54 @@ actually delivered before the failure will be sent again.
 
 ### Known limitations
 
-These come from the 2026-09-28 audit, and each has a proposed fix there. The first one blocks the feature.
+Current as of 2026-09-30. Items 1 and 2 were **deliberately deferred**: they are known and accepted for now,
+not overlooked.
 
-1. **Producer and consumer disagree on the type string.** `NotificationPublisher` sends `"Payment_success"`,
-   but the Lambda matches `"payment_success"`, and the match is case-sensitive. Once wired, every payment
-   notification would fail as an unknown type and end up in the DLQ.
-2. **A failed publish loses the SMS.** `ProcessChapaPaymentHandler` publishes after the commit, and
-   only on the delivery that won the `Pending → Success` guard, so duplicate callbacks publish nothing and
-   a rollback texts no one. But if the SQS call itself fails, the error is logged
-   ("…notification was not published for {TxRef}") and nothing retries it. Payments with no phone number
-   are skipped with a warning.
-3. **No idempotency.** SQS is at-least-once, and a Lambda timeout, a retry after a delivered-but-unacknowledged
-   send, or a DLQ redrive can all resend an SMS. Nothing deduplicates. The payload carries no `TxRef` or
-   message ID to deduplicate on.
-4. **The whole batch shares a 15s timeout.** Up to 10 messages are sent one after another, and the
-   `HttpClient` has the default 100s timeout. If the invocation times out, the entire batch returns to the
-   queue, including messages already sent.
-5. **Every environment needs `Notifications:QueueUrl`.** It has no default, and the API refuses to start
-   without it. Production gets it as the env var `Notifications__QueueUrl`, which **must be added to the ECS
-   task definition (or `yisru/prod/app`) before merging** the change that introduced it, or the new tasks
-   fail at startup. Locally, put a placeholder in `appsettings.Development.json`, e.g.
-   `"Notifications": { "QueueUrl": "https://sqs.invalid/local-dev-placeholder" }`. That file is git-ignored, so
-   each developer adds it themselves. With a placeholder, publishes fail and are logged, and nothing is sent.
-   Never point it at the production queue.
-6. **The AfroMessage token exists in two secrets.** The API reads it from `yisru/prod/app`, and the Lambda from
-   `yisru/prod/afromessage`. Rotating it means updating both.
-7. **No correlation ID.** A log line in the API cannot be joined to the Lambda's log line for the same
-   notification except by timestamp.
-8. **No alarm on the DLQ.** Failed notifications sit there unnoticed and expire after 14 days.
-9. **No tests** for the Lambda. `EasyFind.Functions/Readme.md` refers to a test project that does not exist.
-10. **Infrastructure is click-ops.** The queues, roles and event source mapping exist only in the AWS account,
-    so nothing in the repo can recreate them.
-11. **SMS text is hardcoded in English** inside the Lambda. Email is not implemented.
+1. **No outbox: a failed publish loses the SMS.** *(deferred)* `ProcessChapaPaymentHandler` publishes after
+   the activation commits, and only on the delivery that won the `Pending → Success` guard. So duplicate
+   callbacks publish nothing, and a rollback texts no one. But if the SQS call itself fails, the error is
+   logged ("…notification was not published for {TxRef}") and nothing ever retries it. Payments with no
+   phone number are skipped with a warning.
+   *Fix when needed:* write a `PendingNotifications` row **in the same transaction** as the activation, and
+   have a Hangfire job send pending rows and mark them sent. It needs a migration, which must be applied to
+   production before the code merges.
+2. **No deduplication: an SMS can be sent twice.** *(deferred)* Every message carries an `IdempotencyKey`,
+   but nothing checks it. Duplicates can come from:
+   - SQS delivering the same message twice (it is at-least-once);
+   - a send that AfroMessage accepted but whose response was lost, or that was cancelled at the deadline;
+   - a DLQ redrive of a message that had actually been delivered;
+   - the SDK retrying `SendMessage` after a network error.
+
+   *Fix when needed:* a DynamoDB table keyed on `IdempotencyKey`, with a TTL. The Lambda claims the key with a
+   conditional put before sending, marks it sent afterwards, and skips keys already sent. That narrows the
+   window but cannot close it, because AfroMessage has no idempotency of its own. The Lambda role would also
+   need `dynamodb:PutItem`, `UpdateItem` and `GetItem` on that table. A FIFO queue is not a substitute: it only
+   deduplicates sends within 5 minutes, not consumer retries, and it caps throughput.
+3. **A slow gateway pushes messages into retries.** The Lambda stops starting new messages 2s before its
+   timeout, and each HTTP call is capped at 5s. Anything not started is handed back, so nothing is lost. But
+   every hand-back counts toward `maxReceiveCount` 3, so a sustained AfroMessage slowdown can move healthy
+   messages to the DLQ.
+4. **Every environment needs `Notifications:QueueUrl`.** It has no default, and the API refuses to start
+   without it. Production gets it from the env var `Notifications__QueueUrl` in the ECS task definition.
+   Locally, put a placeholder in `appsettings.Development.json`, e.g.
+   `"Notifications": { "QueueUrl": "https://sqs.invalid/local-dev-placeholder" }`. That file is git-ignored,
+   so each developer adds it themselves. With a placeholder, publishes fail and are logged, and nothing is
+   sent. Never point it at the production queue.
+5. **The AfroMessage token exists in two secrets.** The API reads it from `yisru/prod/app`, and the Lambda
+   from `yisru/prod/afromessage`. Rotating it means updating both. Warm Lambda instances also keep the old
+   token until they are recycled.
+6. **No correlation ID in the logs.** The envelope now has a `MessageId`, but neither side logs it. An API log
+   line can only be joined to the Lambda's line for the same notification by timestamp and `UserId`.
+7. **No alarm on the DLQ.** Failed notifications sit there unnoticed and expire 14 days after they were first
+   sent. Until the AfroMessage account has balance, every payment SMS ends up there.
+8. **No tests for the Lambda.** `Function` builds its own Secrets Manager client and `HttpClient`, so it cannot
+   be unit tested without first putting the SMS sender and secret loading behind interfaces. The deadline
+   handling and the secret-id lookup are untested. `EasyFind.Functions/Readme.md` refers to a test project
+   that does not exist.
+9. **The Lambda is deployed by hand** from a developer machine. `deploy.yml` only deploys the API, so the
+   deployed Lambda can differ from `main`.
+10. **Infrastructure is click-ops.** The queues, roles, secret and event source mapping exist only in the AWS
+    account. The IAM JSON in this document is a record, not something that applies itself.
+11. **The consumer ignores `Version`**, and messages that can never succeed (unknown type, malformed JSON, a
+    number AfroMessage rejects) are still retried three times before reaching the DLQ.
+12. **SMS text is hardcoded in English** inside the Lambda. Email is not implemented.
