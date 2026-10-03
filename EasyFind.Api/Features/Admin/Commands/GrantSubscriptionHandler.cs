@@ -1,0 +1,95 @@
+using EasyFind.Api.Data;
+using EasyFind.Api.Models.Admin;
+using EasyFind.Api.Models.Auth;
+using EasyFind.Api.Models.Dto.Admin;
+using EasyFind.Api.Models.Dto.Common;
+using EasyFind.Api.Models.Subscriptions;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+
+namespace EasyFind.Api.Features.Admin.Commands;
+
+// Named fields matter here: AdminUserId and TargetUserId are both strings, so
+// ordering them positionally invites crediting the wrong account and filing the
+// audit row backwards.
+public sealed record GrantSubscriptionCommand(string AdminUserId, string TargetUserId, GrantSubscriptionDto Grant);
+
+// SuperAdmin comps a subscription. Stacks onto an existing one using the same
+// rule as a real payment, and writes an AdminAction row so every manual grant
+// is attributable: who, to whom, and why.
+public class GrantSubscriptionHandler(
+    ApplicationDbContext db,
+    UserManager<ApplicationUser> userManager,
+    ILogger<GrantSubscriptionHandler> logger)
+{
+    public async Task<Result> HandleAsync(GrantSubscriptionCommand command, CancellationToken ct = default)
+    {
+        var (adminUserId, targetUserId, dto) = command;
+        if (dto.Tier == SubscriptionTier.Free)
+                return Result.Validation("Cannot grant the Free tier. Use revoke to downgrade.");
+            if (dto.DurationDays <= 0)
+                return Result.Validation("Duration must be positive.");
+
+            var user = await userManager.FindByIdAsync(targetUserId);
+            if (user == null) return Result.NotFound("User not found.");
+
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            try
+            {
+                var now = DateTimeOffset.UtcNow;
+
+                // Same stacking logic as the payment webhook: extend if active, else start fresh
+                var existing = await db.Subscriptions
+                    .Where(s => s.UserId == targetUserId && s.Status == SubscriptionStatus.Active)
+                    .OrderByDescending(s => s.ExpiresAt)
+                    .FirstOrDefaultAsync(ct);
+
+                if (existing != null)
+                {
+                    var baseDate = existing.ExpiresAt > now ? existing.ExpiresAt : now;
+                    existing.ExpiresAt = baseDate.AddDays(dto.DurationDays);
+                    existing.Tier = dto.Tier;
+                    existing.UpdatedAt = now;
+                }
+                else
+                {
+                    db.Subscriptions.Add(new Subscription
+                    {
+                        UserId = targetUserId,
+                        Tier = dto.Tier,
+                        Status = SubscriptionStatus.Active,
+                        StartedAt = now,
+                        ExpiresAt = now.AddDays(dto.DurationDays),
+                    });
+                }
+
+                // Mirror tier onto the user (same rule as everywhere: sub first, then mirror)
+                user.SubscriptionTier = dto.Tier;
+                await userManager.UpdateAsync(user);
+
+                // Audit — WHO granted WHAT to WHOM and WHY
+                db.AdminActions.Add(new AdminAction
+                {
+                    AdminUserId = adminUserId,
+                    TargetUserId = targetUserId,
+                    ActionType = AdminActionType.SubscriptionGranted,
+                    Details = $"Granted {dto.Tier} for {dto.DurationDays} days",
+                    Reason = dto.Reason,
+                });
+
+                await db.SaveChangesAsync(ct);
+                await tx.CommitAsync(ct);
+
+                logger.LogInformation("Admin {Admin} granted {Tier} to {Target} for {Days}d. Reason: {Reason}",
+                    adminUserId, dto.Tier, targetUserId, dto.DurationDays, dto.Reason ?? "(none)");
+
+                return Result.Success();
+            }
+            catch (Exception ex)
+            {
+                await tx.RollbackAsync(ct);
+                logger.LogError(ex, "Failed to grant subscription to {Target}", targetUserId);
+                return Result.Failure("Grant failed.", ErrorType.Failure);
+            }
+    }
+}

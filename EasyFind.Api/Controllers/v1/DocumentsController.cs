@@ -1,55 +1,66 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using Asp.Versioning;
+using EasyFind.Api.Features.Documents.Commands;
+using EasyFind.Api.Features.Documents.Queries;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Users;
-using EasyFind.Api.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EasyFind.Api.Controllers.v1;
 
+// CVs and supporting documents. Files are private: listing them never exposes a
+// storage key, and downloading goes through a time-limited URL.
 [Route("api/v{version:apiVersion}/[controller]")]
 [ApiController]
 [ApiVersion("1.0")]
 [Authorize]
-public class DocumentsController(IDocumentService documentService) : ApiControllerBase
+public class DocumentsController : ApiControllerBase
 {
-    private string? UserId => User.FindFirstValue(ClaimTypes.NameIdentifier);
-    
     [HttpPost("upload")]
     [RequestSizeLimit(6 * 1024 * 1024)]   // 6MB ceiling at the framework level
     public async Task<ActionResult<ApiResponse>> Upload(
-        IFormFile file, [FromForm] DocumentType type, CancellationToken ct)
+        IFormFile file,
+        [FromForm] DocumentType type,
+        [FromServices] UploadDocumentHandler handler,
+        CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(UserId)) return Unauthorized();
-        if (file is null) return HandleResult(
-            Result<object>.Validation("No file provided."));
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+        if (file is null) return HandleResult(Result<object>.Validation("No file provided."));
 
-        var result = await documentService.UploadAsync(UserId, file, type, ct);
-        return HandleResult(result);
+        return HandleResult(await handler.HandleAsync(new UploadDocumentCommand(userId, file, type), ct));
     }
 
     [HttpGet]
-    public async Task<ActionResult<ApiResponse>> GetMyDocuments(CancellationToken ct)
+    public async Task<ActionResult<ApiResponse>> GetMyDocuments(
+        [FromServices] GetUserDocumentsHandler handler,
+        CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(UserId)) return Unauthorized();
-        var result = await documentService.GetUserDocumentsAsync(UserId, ct);
-        return HandleResult(result);
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+        return HandleResult(await handler.HandleAsync(new GetUserDocumentsQuery(userId), ct));
     }
 
     [HttpGet("{documentId:guid}/download")]
-    public async Task<ActionResult<ApiResponse>> GetDownloadUrl(Guid documentId, CancellationToken ct)
+    public async Task<ActionResult<ApiResponse>> GetDownloadUrl(
+        Guid documentId,
+        [FromServices] GetDocumentDownloadUrlHandler handler,
+        CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(UserId)) return Unauthorized();
-        var result = await documentService.GetDownloadUrlAsync(UserId, documentId, ct);
-        return HandleResult(result);
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+        return HandleResult(await handler.HandleAsync(new GetDocumentDownloadUrlQuery(userId, documentId), ct));
     }
 
     [HttpDelete("{documentId:guid}")]
-    public async Task<ActionResult<ApiResponse>> Delete(Guid documentId, CancellationToken ct)
+    public async Task<ActionResult<ApiResponse>> Delete(
+        Guid documentId,
+        [FromServices] DeleteDocumentHandler handler,
+        CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(UserId)) return Unauthorized();
-        var result = await documentService.DeleteAsync(UserId, documentId, ct);
-        return HandleResult(result, "Document deleted.");
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(userId)) return Unauthorized();
+        return HandleResult(await handler.HandleAsync(new DeleteDocumentCommand(userId, documentId), ct), "Document deleted.");
     }
 }

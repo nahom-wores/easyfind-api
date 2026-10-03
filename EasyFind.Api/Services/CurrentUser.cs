@@ -11,8 +11,11 @@ public class CurrentUser : ICurrentUser
     {
         this.http = http;
     }
-    public string UserId  =>
+
+    public string? UserId =>
         http.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier);
-    public string Role => 
-        http.HttpContext?.User.FindFirstValue(ClaimTypes.Role);
+
+    // Checks every role claim, not just the first one.
+    public bool IsInRole(string role) =>
+        http.HttpContext?.User.IsInRole(role) ?? false;
 }

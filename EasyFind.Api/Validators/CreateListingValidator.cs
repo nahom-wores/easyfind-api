@@ -4,9 +4,14 @@ using FluentValidation;
 
 namespace EasyFind.Api.Validators;
 
-public class CreateListingValidator : AbstractValidator<CreateListingDto>
+// Rules shared by creating and editing a listing.
+//
+// Generic over the DTO because UpdateListingDto derives from CreateListingDto,
+// and the filter resolves IValidator<T> by exact type — a validator typed to the
+// base would never be found for the derived DTO.
+public abstract class ListingRules<T> : AbstractValidator<T> where T : CreateListingDto
 {
-    public CreateListingValidator()
+    protected ListingRules()
     {
         RuleFor(x => x.Title).NotEmpty().MaximumLength(255);
         RuleFor(x => x.Organization).NotEmpty().MaximumLength(255);
@@ -15,10 +20,6 @@ public class CreateListingValidator : AbstractValidator<CreateListingDto>
         RuleFor(x => x.Description).NotEmpty();
         RuleFor(x => x.ApplyUrl).NotEmpty()
             .Must(BeAValidUrl).WithMessage("Apply URL must be a valid URL.");
-
-        RuleFor(x => x.Deadline)
-            .Must(d => d == null || d >= DateOnly.FromDateTime(DateTime.UtcNow))
-            .WithMessage("Deadline cannot be in the past.");
 
         RuleFor(x => x.SalaryMax)
             .GreaterThanOrEqualTo(x => x.SalaryMin)
@@ -58,4 +59,16 @@ public class CreateListingValidator : AbstractValidator<CreateListingDto>
     private static bool BeAValidUrl(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var result)
         && (result.Scheme == Uri.UriSchemeHttp || result.Scheme == Uri.UriSchemeHttps);
+}
+
+public class CreateListingValidator : ListingRules<CreateListingDto>
+{
+    public CreateListingValidator()
+    {
+        // Only on create. Publishing a listing that has already closed is a
+        // mistake; editing one that has closed is routine.
+        RuleFor(x => x.Deadline)
+            .Must(d => d == null || d >= DateOnly.FromDateTime(DateTime.UtcNow))
+            .WithMessage("Deadline cannot be in the past.");
+    }
 }
