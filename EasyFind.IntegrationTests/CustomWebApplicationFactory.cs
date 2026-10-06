@@ -90,6 +90,8 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
                 ["Chapa:WebhookSecret"] = "test",
                 ["Chapa:BaseUrl"] = "https://chapa.invalid",
                 ["Notifications:QueueUrl"] = "https://sqs.invalid/test-queue",
+                ["Gemini:ApiKey"] = "test-key",
+                ["Gemini:Model"] = "test-model",
             });
         });
 
@@ -138,6 +140,11 @@ public class CustomWebApplicationFactory : WebApplicationFactory<Program>
             services.RemoveAll<INotificationPublisher>();
             services.AddSingleton<FakeNotificationPublisher>();
             services.AddSingleton<INotificationPublisher>(sp => sp.GetRequiredService<FakeNotificationPublisher>());
+
+            // Nor Gemini: a real call costs money and needs a real key.
+            services.RemoveAll<IChatModel>();
+            services.AddSingleton<FakeChatModel>();
+            services.AddSingleton<IChatModel>(sp => sp.GetRequiredService<FakeChatModel>());
 
             using var sp = services.BuildServiceProvider();
             using var scope = sp.CreateScope();

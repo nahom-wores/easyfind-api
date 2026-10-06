@@ -21,6 +21,7 @@ using EasyFind.Api.Models.Dto.Profile;
 using EasyFind.Api.Validators;
 using FluentValidation;
 using EasyFind.Api.Services;
+using EasyFind.Api.Services.Gemini;
 using EasyFind.Api.Services.IServices;
 using EasyFind.Api.Services.Jobs;
 
@@ -80,7 +81,15 @@ public static class LifetimeServicesCollectionExtensions
         services.AddScoped<IValidator<OnboardingDto>, OnboardingValidator>();
         services.AddScoped<SubscriptionGate>();                  // free-vs-paid policy
         services.AddScoped<SubscriptionExpiryJob>();             // nightly Hangfire job
-
+        services.AddOptions<GeminiOptions>()
+            .BindConfiguration(GeminiOptions.Section)
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+        services.AddHttpClient<IChatModel, GeminiClient>(c =>
+        {
+            c.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
+            c.Timeout = TimeSpan.FromSeconds(20);
+        });
         // NOTE: IRedisCacheService is registered in Program.cs instead — the
         // implementation depends on whether Redis is actually configured.
         return services;
