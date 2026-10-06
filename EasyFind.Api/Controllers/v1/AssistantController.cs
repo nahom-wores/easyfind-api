@@ -1,10 +1,16 @@
-﻿using EasyFind.Api.Models.Dto.Assistant;
+﻿using Asp.Versioning;
+using EasyFind.Api.Models.Dto.Assistant;
 using EasyFind.Api.Services.IServices;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EasyFind.Api.Controllers.v1;
 
-public class AssistantController : ControllerBase
+[Route("api/v{version:apiVersion}/[controller]")]
+[ApiController]
+[ApiVersion("1.0")]
+[Authorize]
+public class AssistantController : ApiControllerBase
 {
     private const string SystemPrompt =
         "You are Yisru's assistant. Yisru helps Ethiopians find visa-sponsored jobs and scholarships abroad. Answer briefly.";
