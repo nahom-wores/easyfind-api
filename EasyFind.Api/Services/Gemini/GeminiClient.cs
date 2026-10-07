@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Serialization;
+using EasyFind.Api.Models.Options;
 using EasyFind.Api.Services.IServices;
 using Microsoft.Extensions.Options;
 
@@ -36,7 +37,15 @@ public class GeminiClient(HttpClient http, IOptions<GeminiOptions> options,
         }
         var result = await response.Content.ReadFromJsonAsync<GeminiResponse>(Json, ct);
 
-        var text = result?.Candidates?.FirstOrDefault()?.Content?.Parts?.FirstOrDefault()?.Text ?? "";
+        var candidate = result?.Candidates?.FirstOrDefault();
+        // Anything but STOP (SAFETY, MAX_TOKENS, RECITATION, ...) or no candidate at
+        // all means the text below is empty or cut short. Without this line an empty
+        // reply is indistinguishable from a blocked one.
+        if (candidate?.FinishReason != "STOP")
+            logger.LogWarning("Gemini reply did not finish normally: model={Model} finishReason={FinishReason}",
+                o.Model, candidate?.FinishReason ?? "(no candidate)");
+
+        var text = candidate?.Content?.Parts?.FirstOrDefault()?.Text ?? "";
         var inTokens = result?.UsageMetadata?.PromptTokenCount ?? 0;
         var outTokens = result?.UsageMetadata?.CandidatesTokenCount ?? 0;
 

@@ -81,10 +81,6 @@ public static class LifetimeServicesCollectionExtensions
         services.AddScoped<IValidator<OnboardingDto>, OnboardingValidator>();
         services.AddScoped<SubscriptionGate>();                  // free-vs-paid policy
         services.AddScoped<SubscriptionExpiryJob>();             // nightly Hangfire job
-        services.AddOptions<GeminiOptions>()
-            .BindConfiguration(GeminiOptions.Section)
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
         services.AddHttpClient<IChatModel, GeminiClient>(c =>
         {
             c.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");

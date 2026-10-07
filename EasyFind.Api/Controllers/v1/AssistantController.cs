@@ -1,5 +1,6 @@
 ﻿using Asp.Versioning;
 using EasyFind.Api.Models.Dto.Assistant;
+using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -16,7 +17,7 @@ public class AssistantController : ApiControllerBase
         "You are Yisru's assistant. Yisru helps Ethiopians find visa-sponsored jobs and scholarships abroad. Answer briefly.";
 
     [HttpPost("chat")]
-    public async Task<ActionResult<AssistantChatResponse>> Chat(
+    public async Task<ActionResult<ApiResponse>> Chat(
         AssistantChatRequest request,
         [FromServices] IChatModel model,
         CancellationToken ct)
@@ -30,6 +31,6 @@ public class AssistantController : ApiControllerBase
 
         var reply = await model.SendAsync(SystemPrompt, history, ct);
 
-        return Ok(new AssistantChatResponse(reply.Text));
+        return HandleResult(Result.Success(new AssistantChatResponse(reply.Text)));
     }
 }

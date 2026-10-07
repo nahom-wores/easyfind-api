@@ -352,6 +352,13 @@ builder.Services
     .Validate(o => !string.IsNullOrWhiteSpace(o.QueueUrl),
         "Notifications:QueueUrl is required (env var Notifications__QueueUrl).")
     .ValidateOnStart();
+// Model and ApiKey are [Required]: a missing key fails the boot rather than
+// every chat request. Production needs Gemini__ApiKey in the task definition.
+builder.Services
+    .AddOptions<GeminiOptions>()
+    .Bind(builder.Configuration.GetSection(GeminiOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
 builder.Services.Configure<DocumentUploadOptions>(
     builder.Configuration.GetSection(DocumentUploadOptions.SectionName));
 
