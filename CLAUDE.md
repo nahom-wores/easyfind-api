@@ -154,7 +154,13 @@ subscriptions. Per request:
    decides whether `Organization` and `ApplyUrl` are nulled out for free users (`IsLocked` on the DTO).
 2. Ranking is computed **in SQL** (`OrderByDescending(score)` over weighted matches against the user's
    `UserProfile`) and cached in Redis for 5 min under the key from `FeedCacheKeyExtensions.ToFeedCacheKey` —
-   that key includes userId, country, search, page, pageSize **and tier**.
+   that key includes userId, country, search, **type**, page, pageSize **and tier**. Any new request field that
+   changes the ranked page must be added to the key too, or two different pages share one cache entry.
+   `?type=` narrows on top of the profile's `SeekingType` (it does not override it, so a jobs-only profile
+   asking for scholarships gets nothing). It was accepted and silently ignored until 2026-10; the web client
+   (`ethiopia-pathways`) sends it from its Job/Scholarship filter. That client also sends `countryCodes`,
+   `jobCategories`, `scholarshipFields`, `fundingTypes`, `employmentTypes`, `salaryMin/Max` and `isFeatured`,
+   none of which `FeedRequestDto` has — they are still dropped, so those filters do nothing.
 3. Per-user flags (`IsBookmarked`, `ApplicationStatus`) are queried fresh every request and **never cached**.
    Keep that split: anything user-mutable must stay out of `CachedFeedPage`.
 4. Any write that changes listings must call `cache.InvalidateFeedsAsync()` — every listing command does.

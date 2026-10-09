@@ -45,6 +45,7 @@ public class FeedItem
 {
     public Guid Id { get; set; }
     public string Title { get; set; } = "";
+    public string Type { get; set; } = "";
     public string? Organization { get; set; }
     public string? ApplyUrl { get; set; }
     public bool IsLocked { get; set; }
