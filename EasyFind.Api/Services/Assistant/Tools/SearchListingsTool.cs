@@ -28,9 +28,9 @@ public class SearchListingsTool(ListingAuthorizationService listingAccess) : IAs
     public async Task<object> ExecuteAsync(JsonElement args, CancellationToken ct)
     {
         // The model's arguments are UNTRUSTED input — validate like any user input.
-        var query = GetString(args, "query")?.Trim();
-        var type = GetString(args, "type")?.ToLowerInvariant();
-        var country = GetString(args, "countryCode")?.Trim().ToUpperInvariant();
+        var query = ToolFormat.GetString(args, "query")?.Trim();
+        var type = ToolFormat.GetString(args, "type")?.ToLowerInvariant();
+        var country = ToolFormat.GetString(args, "countryCode")?.Trim().ToUpperInvariant();
 
         // Published only, whatever the caller's role — see PublishedListings.
         var listings = listingAccess.PublishedListings().AsNoTracking();
@@ -67,10 +67,4 @@ public class SearchListingsTool(ListingAuthorizationService listingAccess) : IAs
             ? new { count = 0, message = "No matching listings found." }
             : new { count = results.Count, listings = results };
     }
-    private static string? GetString(JsonElement args, string name) =>
-        args.ValueKind == JsonValueKind.Object &&
-        args.TryGetProperty(name, out var v) &&
-        v.ValueKind == JsonValueKind.String
-            ? v.GetString()
-            : null;
 }

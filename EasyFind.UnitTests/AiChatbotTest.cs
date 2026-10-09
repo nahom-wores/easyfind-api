@@ -24,6 +24,14 @@ public class AiChatbotTest
 
         prompt.Should().Contain("Plan: Pro");
     }
+    // A tool the prompt never mentions is one the model rarely uses well.
+    [Theory]
+    [InlineData("search_listings")]
+    [InlineData("get_listing_details")]
+    [InlineData("recommend_listings")]
+    public void SystemPrompt_ExplainsEveryTool(string tool)
+        => AssistantPrompts.BuildSystem(Sub, "Pro").Should().Contain(tool);
+
     [Fact]
     public void SystemPrompt_HasNoUnfilledPlaceholders()
     {

@@ -91,6 +91,8 @@ public static class LifetimeServicesCollectionExtensions
             c.Timeout = TimeSpan.FromSeconds(20);
         });
         services.AddScoped<IAssistantTool, SearchListingsTool>();
+        services.AddScoped<IAssistantTool, GetListingDetailsTool>();
+        services.AddScoped<IAssistantTool, RecommendListingsTool>();
         services.AddScoped<AssistantAgent>();
         // NOTE: IRedisCacheService is registered in Program.cs instead — the
         // implementation depends on whether Redis is actually configured.

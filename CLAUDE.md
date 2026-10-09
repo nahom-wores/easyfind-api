@@ -302,6 +302,42 @@ Pipeline order is also load-bearing, all of it below `UseAuthentication()`: `Map
 Hangfire's middleware 404s an unknown `/hangfire` path), then `UseHangfireDashboardAuth()` (the cookie →
 `HttpContext.User` step, which the *synchronous* dashboard filter depends on), then `UseHangfireDashboard()`.
 
+### AI assistant (Gemini)
+
+`POST /api/v1/assistant/chat` (`[Authorize]`) → `SendAssistantMessageHandler` → `AssistantAgent`, which runs
+the tool loop against `IChatModel` (`GeminiClient`; `FakeChatModel` in tests) for at most 3 tool rounds. Tools
+implement `IAssistantTool` and are registered in `AddInfrastructure`; the system prompt is
+`Prompts/AssistantPrompts.cs`, and every tool must be explained there (`AiChatbotTest` checks the names).
+
+| Tool | Does | Goes through |
+|---|---|---|
+| `search_listings` | keyword/type/country search | `ListingAuthorizationService.PublishedListings()` |
+| `get_listing_details` | one listing's full details, to summarize | `GetListingDetailHandler` (same as `GET /listings/{id}`) |
+| `recommend_listings` | the user's own ranked feed + the profile it was ranked against | `GetFeedHandler`, `GetProfileHandler` |
+
+Rules every tool follows:
+
+- **The user is always `ICurrentUser`, never a tool argument.** No tool has a user parameter, and extra
+  arguments are ignored, so the model cannot be talked into acting for, or reading the profile of, someone
+  else. `AssistantToolTests` slips another user's id into the arguments and asserts nothing changes.
+- **Reuse the consumer handlers, don't re-query.** That is what keeps the paywall (no organization or apply
+  link for free users), the free-tier cap and the feed ranking identical to the app's.
+- **Arguments are untrusted input.** Parse them with `ToolFormat.GetString`, and return bad input as an
+  `error` object the model can read rather than throwing.
+- **Keep payloads small — every token is paid for on every round.** `ToolFormat.Shorten` caps descriptions
+  (1,500 chars for details, 200 per recommendation) and marks the cut. Enums go out as names
+  (`ToolFormat.EnumName`), and only the profile fields ranking uses are sent — not name, birth date, sex or
+  passport status, which would otherwise go to Google on every round.
+
+**Known limitation — follow-ups re-search by title.** The app sends history as plain text, so tool calls and
+listing ids from earlier turns are gone by the next one. For "summarize the first one" the prompt has the
+model call `search_listings` with the title, then `get_listing_details`: two tool rounds and a second lookup,
+and it fails where the title is ambiguous or the search (`ILike` on title/organization) doesn't match. The
+proper fix is to return the referenced listing ids to the app with each reply and have it send them back with
+the history.
+
+`ILike` is Postgres-only, so keyword search is untested here — check it against the local Docker database.
+
 ### Infrastructure notes
 
 - **Redis is optional.** `Program.cs` registers `RedisCacheService` only when the connection string is set and
@@ -372,8 +408,11 @@ blocks the deploy.
    lazily (when a service is constructed) can go in `ConfigureAppConfiguration`.
 3. **Auth**: `TestAuthHandler` authenticates from `X-Test-UserId` / `X-Test-Roles`. All three
    `AuthenticationOptions` defaults must be overridden, because `Program.cs` names JwtBearer explicitly.
-4. **`ISmsService` and `IChapaClient` are replaced by fakes** so no test touches the network;
-   `FakeSmsService.LastOtpFor(phone)` is how a test "reads the SMS".
+4. **`ISmsService`, `IChapaClient`, `INotificationPublisher` and `IChatModel` are replaced by fakes** so no
+   test touches the network; `FakeSmsService.LastOtpFor(phone)` is how a test "reads the SMS".
+   `FakeChatModel` answers "fake reply" unless a test calls `ScriptToolCall(tool, args)`: the next chat then
+   asks for that tool, and `LastToolResult()` returns what the tool handed the model — the real endpoint,
+   agent and tool, with the user taken from the request.
 
 Two provider-specific fallbacks in `ApplicationDbContext` exist purely so this works: the `UserProfile` enum
 arrays become a CSV string, and `DateTimeOffset` becomes a binary long (SQLite cannot `ORDER BY` one, and the
