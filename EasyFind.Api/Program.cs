@@ -27,6 +27,7 @@ using StackExchange.Redis;
 using Amazon.S3;
 using EasyFind.Api.Services;
 using EasyFind.Api.Services.IServices;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 //AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 var builder = WebApplication.CreateBuilder(args);
@@ -96,6 +97,15 @@ builder.Services.AddAWSService<IAmazonS3>();
 #region service registrations
 
 builder.Services.AddLifetimeServices();
+
+// Development only: OTPs (and any other SMS) are written to the console instead
+// of sent, so sign-in can be tested without AfroMessage credit. Every other
+// environment keeps the real sender; see ConsoleSmsService.
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.RemoveAll<ISmsService>();
+    builder.Services.AddScoped<ISmsService, ConsoleSmsService>();
+}
 
 #endregion
 
@@ -168,6 +178,11 @@ builder.Services.AddAuthentication(x =>
             }
         };
     });
+
+// SuperAdmin includes Admin. See AppPolicies for why this isn't done with roles.
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy(AppPolicies.AdminAccess, p => p.RequireRole(AppRoles.Admin, AppRoles.SuperAdmin))
+    .AddPolicy(AppPolicies.SuperAdminAccess, p => p.RequireRole(AppRoles.SuperAdmin));
 
 #endregion
 

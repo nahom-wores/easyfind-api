@@ -47,9 +47,21 @@ public class ListingAuthorizationService
         if (!currentUser.IsInRole(AppRoles.User))
             return db.Listings.Where(_ => false);
 
-        var visible = db.Listings.Where(l => l.DeletedAt == null);
-        return activeOnly ? visible.Where(l => l.IsActive) : visible;
+        return activeOnly ? Published : NotDeleted;
     }
+
+    // What the public sees — active and not deleted — for EVERY signed-in role,
+    // staff included. For consumer surfaces that must not change with the
+    // caller's role, like the assistant's search: AuthorizedListings would show
+    // an admin closed and deleted listings there. Unknown or missing role still
+    // sees nothing.
+    public IQueryable<Listing> PublishedListings()
+        => IsManager || currentUser.IsInRole(AppRoles.User)
+            ? Published
+            : db.Listings.Where(_ => false);
+
+    private IQueryable<Listing> NotDeleted => db.Listings.Where(l => l.DeletedAt == null);
+    private IQueryable<Listing> Published => NotDeleted.Where(l => l.IsActive);
 
     // Listings the current user may MANAGE — includes inactive and soft-deleted
     // rows. Tracked (not AsNoTracking), so callers can mutate and SaveChanges.

@@ -5,6 +5,7 @@ using EasyFind.Api.Features.Admin.Queries;
 using EasyFind.Api.Models.Admin;
 using EasyFind.Api.Models.Dto.Admin;
 using EasyFind.Api.Models.Dto.Common;
+using EasyFind.Api.Models.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -13,13 +14,13 @@ namespace EasyFind.Api.Controllers.v1;
 [Route("api/v{version:apiVersion}/admin/users")]
 [ApiController]
 [ApiVersion("1.0")]
-[Authorize(Roles = "Admin")]
+[Authorize(Policy = AppPolicies.AdminAccess)]
 public class AdminUsersController : ApiControllerBase
 {
     // Who performed the action — recorded on the AdminAction audit row.
     private string? AdminId => User.FindFirstValue(ClaimTypes.NameIdentifier);
 
-    [Authorize(Roles = "SuperAdmin")]
+    [Authorize(Policy = AppPolicies.SuperAdminAccess)]
     [HttpPost("{userId}/subscription/grant")]
     public async Task<ActionResult<ApiResponse>> GrantSubscription(
         string userId,
@@ -31,7 +32,7 @@ public class AdminUsersController : ApiControllerBase
         return HandleResult(await handler.HandleAsync(new GrantSubscriptionCommand(AdminId, userId, dto), ct), "Subscription granted.");
     }
 
-    [Authorize(Roles = "SuperAdmin")]
+    [Authorize(Policy = AppPolicies.SuperAdminAccess)]
     [HttpPost("{userId}/subscription/revoke")]
     public async Task<ActionResult<ApiResponse>> RevokeSubscription(
         string userId,

@@ -3,6 +3,7 @@ using EasyFind.Api.Features.Admin.Commands;
 using EasyFind.Api.Features.Admin.Queries;
 using EasyFind.Api.Features.Applications.Commands;
 using EasyFind.Api.Features.Applications.Queries;
+using EasyFind.Api.Features.Assistant.Commands;
 using EasyFind.Api.Features.Bookmarks.Commands;
 using EasyFind.Api.Features.Bookmarks.Queries;
 using EasyFind.Api.Features.Documents.Commands;
@@ -21,6 +22,8 @@ using EasyFind.Api.Models.Dto.Profile;
 using EasyFind.Api.Validators;
 using FluentValidation;
 using EasyFind.Api.Services;
+using EasyFind.Api.Services.Assistant;
+using EasyFind.Api.Services.Assistant.Tools;
 using EasyFind.Api.Services.Gemini;
 using EasyFind.Api.Services.IServices;
 using EasyFind.Api.Services.Jobs;
@@ -56,6 +59,7 @@ public static class LifetimeServicesCollectionExtensions
         services.AddSubscriptionsFeature();
         services.AddUsersFeature();
         services.AddAdminFeature();
+        services.AddAssistantFeature();
 
         return services;
     }
@@ -86,6 +90,8 @@ public static class LifetimeServicesCollectionExtensions
             c.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
             c.Timeout = TimeSpan.FromSeconds(20);
         });
+        services.AddScoped<IAssistantTool, SearchListingsTool>();
+        services.AddScoped<AssistantAgent>();
         // NOTE: IRedisCacheService is registered in Program.cs instead — the
         // implementation depends on whether Redis is actually configured.
         return services;
@@ -178,6 +184,12 @@ public static class LifetimeServicesCollectionExtensions
         services.AddScoped<GetUserDetailHandler>();
         services.AddScoped<ListPaymentsHandler>();
         services.AddScoped<GetOverviewStatsHandler>();
+        return services;
+    }
+
+    private static IServiceCollection AddAssistantFeature(this IServiceCollection services)
+    {
+        services.AddScoped<SendAssistantMessageHandler>();
         return services;
     }
 }

@@ -1,4 +1,5 @@
 using Asp.Versioning;
+using EasyFind.Api.Models.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Net;
@@ -290,8 +291,10 @@ public class AuthController(ITokenService tokenService) : ApiControllerBase
     }
 
     // POST api/v1/auth/assign-role
+    // SuperAdmin only: the handler grants whatever role it is asked for, so an
+    // Admin able to call this could promote themselves to SuperAdmin.
     [HttpPost("assign-role")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Policy = AppPolicies.SuperAdminAccess)]
     public async Task<ActionResult<ApiResponse>> AssignRole(
         [FromBody] AssignRoleDto dto,
         [FromServices] AssignRoleHandler handler,

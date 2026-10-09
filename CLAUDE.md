@@ -34,12 +34,30 @@ This is a deliberate choice: a deploy must not be able to alter the schema on it
 **The consequence is that a migration is a separate manual step, and it has to land before the code that
 needs it.** Nothing in `deploy.yml` checks this, and integration tests build their schema with
 `EnsureCreated()` so they pass whether or not a migration exists — merge to `main` with an unapplied
-migration and the new ECS tasks come up against the old schema and fail on first use. `deploy.yml` waits on
-`ecs wait services-stable`, so at least that failure surfaces as a red deploy rather than a green one.
+migration and the new ECS tasks come up against the old schema and fail on first use. **The deploy will
+still go green:** `ecs wait services-stable` only waits for tasks to pass `/health`, which touches no table,
+so a missing table surfaces as 500s on whichever endpoint uses it. This happened with `OtpThrottles` —
+`request-otp` failed with `relation "OtpThrottles" does not exist` while the deploy reported success.
 Apply the migration against production **first**, then merge.
 
 Deploy: pushing to `main` triggers `.github/workflows/deploy.yml` — builds `EasyFind.Api/Dockerfile`, pushes
-to ECR, forces a new ECS deployment (eu-central-1).
+to ECR, forces a new ECS deployment (eu-central-1). Production's database is **AWS RDS**.
+
+### Local development
+
+- **Database:** the Docker Postgres from `compose.yaml` (`localhost:5432`, db `EasyFind`, user `postgres`,
+  password `123`), set in the git-ignored `appsettings.Development.json`. A fresh volume is empty: run
+  `dotnet ef database update` after `docker compose up -d`. Migrate locally first, so a forgotten migration
+  fails on your machine rather than in production. The Supabase database in `appsettings.json` is a shared
+  dev database, not production.
+- **Sign-in without SMS:** in Development, `ConsoleSmsService` replaces `AfroSmsService`, so `request-otp`
+  writes the code to the console (`DEV SMS: OTP for ... is ...`) instead of texting it. Nothing is bypassed —
+  the code is still generated, throttled and verified. It is registered in `Program.cs` under
+  `IsDevelopment()` only; production must never run with `ASPNETCORE_ENVIRONMENT=Development`, or every
+  user's code would be written to CloudWatch.
+- **The first SuperAdmin** has to be granted in the database, since `assign-role` requires SuperAdmin. Sign
+  in once so the account exists, then insert its `SuperAdmin` row into `AspNetUserRoles`, and sign in again
+  so the token carries the role.
 
 ## Architecture
 
@@ -89,7 +107,7 @@ Features/
                   | ListUsers GetUserDetail ListPayments GetOverviewStats
 ```
 
-`Services/` now holds **only infrastructure** — `TokenService`, `AfroSmsService`, `S3StorageService`,
+`Services/` now holds **only infrastructure** — `TokenService`, `AfroSmsService` (`ConsoleSmsService` in Development), `S3StorageService`,
 `ImageService`, `ChapaClient`, `ChapaWebhookVerifier`, `RedisCacheService`/`NoOpCacheService`, plus
 `CurrentUser`, `SubscriptionGate` and `ImageValidator`. These keep their interfaces: they are external
 boundaries worth being able to swap or fake. **Handlers get no interface** — one implementation, injected
@@ -154,7 +172,7 @@ feed DTO but never populated, so feed items carry no apply link even for paid us
 ### Authorization
 
 - JWT bearer, `ClockSkew.Zero`. Login is **phone + OTP** (`AuthController` request-otp / verify-otp via
-  `AfroSmsService`), plus refresh tokens.
+  `AfroSmsService`, or `ConsoleSmsService` in Development — see Local development), plus refresh tokens.
 - **The access token lifetime is the revocation window.** Nothing validates an issued token against the
   database, so a ban, a role change or a logout only takes effect when the current token expires. It is
   `JwtConfig:AccessTokenMinutes` (default 60), clamped to 8 hours in `TokenService` — it was `AddDays(15)`.
@@ -186,12 +204,22 @@ feed DTO but never populated, so feed items carry no apply link even for paid us
   `AuthorizedListings(activeOnly = true)` is the consumer path (job-seekers get `IsActive && DeletedAt == null`;
   `activeOnly: false` keeps already-saved/applied-to listings visible after they go inactive).
   `ManageableListings()` is the staff path (Admin/SuperAdmin see everything including soft-deleted; everyone
-  else gets an empty set, so a missing `[Authorize]` can't leak). Unknown or missing role sees nothing.
-  Add new listing queries through one of these two — never `db.Listings`, and never via the `b.Listing` /
+  else gets an empty set, so a missing `[Authorize]` can't leak). `PublishedListings()` is the public view
+  (active and not deleted) for **every** role, staff included — for consumer surfaces that must not change
+  with the caller's role, like the assistant's `SearchListingsTool` (`AuthorizedListings` would offer an admin
+  closed and deleted listings there; `SearchListingsToolTests` pins this). Unknown or missing role sees nothing.
+  Add new listing queries through one of these three — never `db.Listings`, and never via the `b.Listing` /
   `a.Listing` navigation properties, which bypass the check (join to the authorized set instead).
 - The service depends on `ICurrentUser`, so it only works inside a request. A background job that needs
   listings must take an explicit scope rather than calling it.
-- Admin controllers use `[Authorize(Roles = "Admin")]` and route under `api/v{version}/admin/...`.
+- Admin controllers use `[Authorize(Policy = AppPolicies.AdminAccess)]` and route under `api/v{version}/admin/...`.
+  **Use the policies in `AppPolicies`, never `[Authorize(Roles = ...)]`.** Identity roles are flat, so
+  `Roles = "Admin"` rejects a SuperAdmin who doesn't also hold Admin. `AdminAccess` accepts Admin or
+  SuperAdmin; `SuperAdminAccess` is SuperAdmin only. `RoleHierarchyTests` pins both.
+- **`POST /auth/assign-role` is SuperAdmin only.** `AssignRoleHandler` grants whatever role it is asked
+  for, so when it accepted Admin, any Admin could promote themselves to SuperAdmin. A granted role reaches
+  the user's token on their next sign-in or refresh (`GenerteAccessToken` reloads roles from the database);
+  until then the old token keeps the old roles.
 ### OTP abuse limits
 
 Two independent layers, both required. An OTP send costs money and rings a stranger's phone.

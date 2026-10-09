@@ -3,6 +3,7 @@ using EasyFind.Api.Features.Listings.Commands;
 using EasyFind.Api.Features.Listings.Queries;
 using EasyFind.Api.Models.Dto.Common;
 using EasyFind.Api.Models.Dto.Listings;
+using EasyFind.Api.Models.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -17,7 +18,7 @@ namespace EasyFind.Api.Controllers.v1;
 [Route("api/v{version:apiVersion}/admin/listings")]
 [ApiController]
 [ApiVersion("1.0")]
-[Authorize(Roles = "Admin")]
+[Authorize(Policy = AppPolicies.AdminAccess)]
 public class AdminListingsController : ApiControllerBase
 {
     [HttpGet]

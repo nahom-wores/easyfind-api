@@ -1,7 +1,7 @@
 ﻿using Asp.Versioning;
+using EasyFind.Api.Features.Assistant.Commands;
 using EasyFind.Api.Models.Dto.Assistant;
 using EasyFind.Api.Models.Dto.Common;
-using EasyFind.Api.Services.IServices;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -13,24 +13,13 @@ namespace EasyFind.Api.Controllers.v1;
 [Authorize]
 public class AssistantController : ApiControllerBase
 {
-    private const string SystemPrompt =
-        "You are Yisru's assistant. Yisru helps Ethiopians find visa-sponsored jobs and scholarships abroad. Answer briefly.";
-
     [HttpPost("chat")]
     public async Task<ActionResult<ApiResponse>> Chat(
         AssistantChatRequest request,
-        [FromServices] IChatModel model,
+        [FromServices] SendAssistantMessageHandler handler,
         CancellationToken ct)
     {
-        // App format -> our internal format
-        var history = request.Messages
-            .Select(m => new ChatMessage(
-                m.Role == "assistant" ? ChatRole.Assistant : ChatRole.User,
-                m.Text))
-            .ToList();
-
-        var reply = await model.SendAsync(SystemPrompt, history, ct);
-
-        return HandleResult(Result.Success(new AssistantChatResponse(reply.Text)));
+        var result = await handler.HandleAsync(new SendAssistantMessageCommand(UserId, request), ct);
+        return HandleResult(result);
     }
 }
