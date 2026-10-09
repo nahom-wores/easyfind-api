@@ -64,10 +64,13 @@ public class AssistantToolTests(CustomWebApplicationFactory factory)
     private Task SeedAsync(params Listing[] listings) => factory.SeedAsync(db => db.Listings.AddRange(listings));
 
     private Task GiveProfileAsync(string userId, params string[] targetCountries) =>
+        GiveProfileAsync(userId, SeekingType.Both, targetCountries);
+
+    private Task GiveProfileAsync(string userId, SeekingType seeking, params string[] targetCountries) =>
         factory.SeedAsync(db => db.UserProfiles.Add(new UserProfile
         {
             UserId = userId,
-            SeekingType = SeekingType.Both,
+            SeekingType = seeking,
             TargetCountries = targetCountries.ToList(),
         }));
 
@@ -139,6 +142,36 @@ public class AssistantToolTests(CustomWebApplicationFactory factory)
         var snippet = listing.GetProperty("snippet").GetString()!;
         snippet.Should().EndWith(ToolFormat.TruncatedMarker);
         snippet.Length.Should().BeLessThanOrEqualTo(ToolFormat.SnippetChars + ToolFormat.TruncatedMarker.Length);
+    }
+
+    // A jobs-only profile asking for scholarships always gets nothing, even when
+    // scholarships exist. The note is what stops the bot saying "there are none".
+    [Fact]
+    public async Task Recommend_TypeExcludedByProfile_ExplainsWhyItIsEmpty()
+    {
+        var (client, me) = await factory.SignedInUserAsync(SubscriptionTier.Pro);
+        await GiveProfileAsync(me.Id, SeekingType.Job, "RG");
+        await SeedAsync(Scholarship("RG"));
+
+        var result = await RunToolAsync(client, "recommend_listings", new { type = "scholarship", countryCode = "RG" });
+
+        result.GetProperty("count").GetInt32().Should().Be(0);
+        var note = result.GetProperty("note").GetString();
+        note.Should().Contain("set to jobs only").And.Contain("profile settings");
+    }
+
+    [Theory]
+    [InlineData(SeekingType.Both, "scholarship")]      // profile allows both
+    [InlineData(SeekingType.Scholarship, "scholarship")] // asked for what the profile wants
+    [InlineData(SeekingType.Job, null)]                // no type asked for
+    public async Task Recommend_NoNote_WhenTheProfileDoesNotExcludeTheType(SeekingType seeking, string? type)
+    {
+        var (client, me) = await factory.SignedInUserAsync(SubscriptionTier.Pro);
+        await GiveProfileAsync(me.Id, seeking, "RH");
+
+        var result = await RunToolAsync(client, "recommend_listings", new { type, countryCode = "RH" });
+
+        result.GetProperty("note").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     [Fact]

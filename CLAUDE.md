@@ -157,7 +157,7 @@ subscriptions. Per request:
    that key includes userId, country, search, **type**, page, pageSize **and tier**. Any new request field that
    changes the ranked page must be added to the key too, or two different pages share one cache entry.
    `?type=` narrows on top of the profile's `SeekingType` (it does not override it, so a jobs-only profile
-   asking for scholarships gets nothing). It was accepted and silently ignored until 2026-10; the web client
+   asking for scholarships gets nothing — the assistant explains this; see the AI assistant section). It was accepted and silently ignored until 2026-10; the web client
    (`ethiopia-pathways`) sends it from its Job/Scholarship filter. That client also sends `countryCodes`,
    `jobCategories`, `scholarshipFields`, `fundingTypes`, `employmentTypes`, `salaryMin/Max` and `isFeatured`,
    none of which `FeedRequestDto` has — they are still dropped, so those filters do nothing.
@@ -328,6 +328,10 @@ Rules every tool follows:
   (1,500 chars for details, 200 per recommendation) and marks the cut. Enums go out as names
   (`ToolFormat.EnumName`), and only the profile fields ranking uses are sent — not name, birth date, sex or
   passport status, which would otherwise go to Google on every round.
+- **Say why a result is empty when the reason is known.** `recommend_listings` adds a `note` when the
+  requested type is excluded by the profile's `SeekingType` (the feed narrows on top of it, so a jobs-only
+  profile asking for scholarships always gets nothing). Without it the model can only say "none found",
+  which reads as "there are no scholarships"; with it, it tells the user to change their profile settings.
 
 **Known limitation — follow-ups re-search by title.** The app sends history as plain text, so tool calls and
 listing ids from earlier turns are gone by the next one. For "summarize the first one" the prompt has the

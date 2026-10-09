@@ -3,7 +3,9 @@ using EasyFind.Api.Features.Listings;
 using EasyFind.Api.Features.Listings.Queries;
 using EasyFind.Api.Features.Profile.Queries;
 using EasyFind.Api.Models.Dto.Listings;
+using EasyFind.Api.Models.Dto.Profile;
 using EasyFind.Api.Models.Enum;
+using EasyFind.Api.Models.Users;
 using EasyFind.Api.Services.IServices;
 using Microsoft.EntityFrameworkCore;
 
@@ -59,7 +61,8 @@ public class RecommendListingsTool(
             PageSize = MaxResults,
         };
 
-        var profile = await ProfileAsync(userId, ct);
+        var profileResult = await profiles.HandleAsync(new GetProfileQuery(userId), ct);
+        var profile = profileResult.IsSuccess ? profileResult.Value : null;
 
         var page = await feed.HandleAsync(new GetFeedQuery(userId, request), ct);
         var items = page.IsSuccess ? page.Value.Items : [];
@@ -97,21 +100,37 @@ public class RecommendListingsTool(
 
         return new
         {
-            profile = (object?)profile ?? new { missing = true, message = "The user has not completed their profile, so results are not personalized." },
+            profile = profile is null
+                ? new { missing = true, message = "The user has not completed their profile, so results are not personalized." }
+                : Describe(profile),
             count = listings.Count,
+            note = TypeExcludedByProfile(request.Type, profile),
             listings,
         };
+    }
+
+    // The feed's ?type= narrows on top of the profile's SeekingType, so a
+    // jobs-only profile asking for scholarships always gets nothing. Without
+    // the reason, the model can only say "none found" — which reads as "there
+    // are no scholarships" when there may be plenty.
+    private static string? TypeExcludedByProfile(ListingType? requested, ProfileResponseDto? profile)
+    {
+        if (requested is not { } type || profile is null) return null;
+        if (!Enum.TryParse<SeekingType>(profile.SeekingType, out var seeking) || seeking == SeekingType.Both) return null;
+        if ((seeking, type) is (SeekingType.Job, ListingType.Job) or (SeekingType.Scholarship, ListingType.Scholarship))
+            return null;
+
+        var wanted = type == ListingType.Job ? "jobs" : "scholarships";
+        var setTo = seeking == SeekingType.Job ? "jobs" : "scholarships";
+        return $"No {wanted} are shown because the user's profile is set to {setTo} only. " +
+               $"They can change what they are looking for in their profile settings to see {wanted}.";
     }
 
     // Only the fields ranking uses, plus education and English for context.
     // Name, birth date, sex and passport status stay out: the model doesn't
     // need them, and they'd be sent to a third party on every round.
-    private async Task<object?> ProfileAsync(string userId, CancellationToken ct)
+    private static object Describe(ProfileResponseDto p)
     {
-        var result = await profiles.HandleAsync(new GetProfileQuery(userId), ct);
-        if (!result.IsSuccess) return null;
-
-        var p = result.Value;
         return new
         {
             seeking = p.SeekingType,
