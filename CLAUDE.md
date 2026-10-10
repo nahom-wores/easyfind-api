@@ -55,6 +55,11 @@ to ECR, forces a new ECS deployment (eu-central-1). Production's database is **A
   the code is still generated, throttled and verified. It is registered in `Program.cs` under
   `IsDevelopment()` only; production must never run with `ASPNETCORE_ENVIRONMENT=Development`, or every
   user's code would be written to CloudWatch.
+- **Payments without AWS:** in Development, `ConsoleNotificationPublisher` replaces the SQS publisher, so
+  the "payment successful" SMS is logged (`DEV NOTIFICATION: ...`) instead of queued. Without it every local
+  Chapa callback crashed: the SQS client needs AWS credentials, and the app can't use an SSO login. For
+  Chapa to reach your machine at all, run `ngrok http --url=<your ngrok domain> 5123` (the
+  `Subscription:CallbackUrl` host) before paying.
 - **The first SuperAdmin** has to be granted in the database, since `assign-role` requires SuperAdmin. Sign
   in once so the account exists, then insert its `SuperAdmin` row into `AspNetUserRoles`, and sign in again
   so the token carries the role.

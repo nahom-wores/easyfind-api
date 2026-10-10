@@ -98,13 +98,18 @@ builder.Services.AddAWSService<IAmazonS3>();
 
 builder.Services.AddLifetimeServices();
 
-// Development only: OTPs (and any other SMS) are written to the console instead
-// of sent, so sign-in can be tested without AfroMessage credit. Every other
-// environment keeps the real sender; see ConsoleSmsService.
+// Development only: OTPs (and any other SMS) and queued notifications are
+// written to the console instead of sent, so sign-in and payments can be
+// tested without AfroMessage credit or AWS credentials. Every other
+// environment keeps the real senders; see ConsoleSmsService and
+// ConsoleNotificationPublisher.
 if (builder.Environment.IsDevelopment())
 {
     builder.Services.RemoveAll<ISmsService>();
     builder.Services.AddScoped<ISmsService, ConsoleSmsService>();
+
+    builder.Services.RemoveAll<INotificationPublisher>();
+    builder.Services.AddScoped<INotificationPublisher, ConsoleNotificationPublisher>();
 }
 
 #endregion
