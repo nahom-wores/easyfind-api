@@ -10,8 +10,13 @@ namespace EasyFind.Api.Features.Users.Commands;
 
 public sealed record AssignRoleCommand(AssignRoleDto Assignment);
 
-// Admin grants a role. Idempotent: re-assigning an existing role succeeds.
-// Stamps the security stamp so existing tokens pick the change up.
+// SuperAdmin grants a role (the endpoint is SuperAdminAccess: this grants
+// whatever it's asked for, so an Admin could otherwise promote themselves).
+// Idempotent: re-assigning an existing role succeeds.
+//
+// The role reaches the user's token only on their next sign-in or refresh.
+// Nothing validates the security stamp on a request, so stamping it here does
+// not revoke tokens already issued.
 public class AssignRoleHandler(UserManager<ApplicationUser> userManager)
 {
     public async Task<Result> HandleAsync(AssignRoleCommand command, CancellationToken ct = default)

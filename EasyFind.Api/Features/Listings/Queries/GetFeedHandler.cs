@@ -129,6 +129,12 @@ public class GetFeedHandler(
             // SeekingType.Both => no filter
         }
 
+        // ?type= narrows further. Stacks with SeekingType rather than overriding
+        // it, so asking a jobs-only profile for scholarships returns nothing.
+        // Type is part of the cache key — see ToFeedCacheKey.
+        if (request.Type.HasValue)
+            query = query.Where(l => l.Type == request.Type.Value);
+
         if (!string.IsNullOrWhiteSpace(request.CountryCode))
             query = query.Where(l => l.CountryCode == request.CountryCode);
 

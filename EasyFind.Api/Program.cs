@@ -27,6 +27,7 @@ using StackExchange.Redis;
 using Amazon.S3;
 using EasyFind.Api.Services;
 using EasyFind.Api.Services.IServices;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 //AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 var builder = WebApplication.CreateBuilder(args);
@@ -96,6 +97,20 @@ builder.Services.AddAWSService<IAmazonS3>();
 #region service registrations
 
 builder.Services.AddLifetimeServices();
+
+// Development only: OTPs (and any other SMS) and queued notifications are
+// written to the console instead of sent, so sign-in and payments can be
+// tested without AfroMessage credit or AWS credentials. Every other
+// environment keeps the real senders; see ConsoleSmsService and
+// ConsoleNotificationPublisher.
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.RemoveAll<ISmsService>();
+    builder.Services.AddScoped<ISmsService, ConsoleSmsService>();
+
+    builder.Services.RemoveAll<INotificationPublisher>();
+    builder.Services.AddScoped<INotificationPublisher, ConsoleNotificationPublisher>();
+}
 
 #endregion
 
@@ -168,6 +183,11 @@ builder.Services.AddAuthentication(x =>
             }
         };
     });
+
+// SuperAdmin includes Admin. See AppPolicies for why this isn't done with roles.
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy(AppPolicies.AdminAccess, p => p.RequireRole(AppRoles.Admin, AppRoles.SuperAdmin))
+    .AddPolicy(AppPolicies.SuperAdminAccess, p => p.RequireRole(AppRoles.SuperAdmin));
 
 #endregion
 
@@ -351,6 +371,13 @@ builder.Services
     .Bind(builder.Configuration.GetSection(NotificationOptions.SectionName))
     .Validate(o => !string.IsNullOrWhiteSpace(o.QueueUrl),
         "Notifications:QueueUrl is required (env var Notifications__QueueUrl).")
+    .ValidateOnStart();
+// Model and ApiKey are [Required]: a missing key fails the boot rather than
+// every chat request. Production needs Gemini__ApiKey in the task definition.
+builder.Services
+    .AddOptions<GeminiOptions>()
+    .Bind(builder.Configuration.GetSection(GeminiOptions.SectionName))
+    .ValidateDataAnnotations()
     .ValidateOnStart();
 builder.Services.Configure<DocumentUploadOptions>(
     builder.Configuration.GetSection(DocumentUploadOptions.SectionName));

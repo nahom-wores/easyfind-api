@@ -34,12 +34,35 @@ This is a deliberate choice: a deploy must not be able to alter the schema on it
 **The consequence is that a migration is a separate manual step, and it has to land before the code that
 needs it.** Nothing in `deploy.yml` checks this, and integration tests build their schema with
 `EnsureCreated()` so they pass whether or not a migration exists — merge to `main` with an unapplied
-migration and the new ECS tasks come up against the old schema and fail on first use. `deploy.yml` waits on
-`ecs wait services-stable`, so at least that failure surfaces as a red deploy rather than a green one.
+migration and the new ECS tasks come up against the old schema and fail on first use. **The deploy will
+still go green:** `ecs wait services-stable` only waits for tasks to pass `/health`, which touches no table,
+so a missing table surfaces as 500s on whichever endpoint uses it. This happened with `OtpThrottles` —
+`request-otp` failed with `relation "OtpThrottles" does not exist` while the deploy reported success.
 Apply the migration against production **first**, then merge.
 
 Deploy: pushing to `main` triggers `.github/workflows/deploy.yml` — builds `EasyFind.Api/Dockerfile`, pushes
-to ECR, forces a new ECS deployment (eu-central-1).
+to ECR, forces a new ECS deployment (eu-central-1). Production's database is **AWS RDS**.
+
+### Local development
+
+- **Database:** the Docker Postgres from `compose.yaml` (`localhost:5432`, db `EasyFind`, user `postgres`,
+  password `123`), set in the git-ignored `appsettings.Development.json`. A fresh volume is empty: run
+  `dotnet ef database update` after `docker compose up -d`. Migrate locally first, so a forgotten migration
+  fails on your machine rather than in production. The Supabase database in `appsettings.json` is a shared
+  dev database, not production.
+- **Sign-in without SMS:** in Development, `ConsoleSmsService` replaces `AfroSmsService`, so `request-otp`
+  writes the code to the console (`DEV SMS: OTP for ... is ...`) instead of texting it. Nothing is bypassed —
+  the code is still generated, throttled and verified. It is registered in `Program.cs` under
+  `IsDevelopment()` only; production must never run with `ASPNETCORE_ENVIRONMENT=Development`, or every
+  user's code would be written to CloudWatch.
+- **Payments without AWS:** in Development, `ConsoleNotificationPublisher` replaces the SQS publisher, so
+  the "payment successful" SMS is logged (`DEV NOTIFICATION: ...`) instead of queued. Without it every local
+  Chapa callback crashed: the SQS client needs AWS credentials, and the app can't use an SSO login. For
+  Chapa to reach your machine at all, run `ngrok http --url=<your ngrok domain> 5123` (the
+  `Subscription:CallbackUrl` host) before paying.
+- **The first SuperAdmin** has to be granted in the database, since `assign-role` requires SuperAdmin. Sign
+  in once so the account exists, then insert its `SuperAdmin` row into `AspNetUserRoles`, and sign in again
+  so the token carries the role.
 
 ## Architecture
 
@@ -89,7 +112,7 @@ Features/
                   | ListUsers GetUserDetail ListPayments GetOverviewStats
 ```
 
-`Services/` now holds **only infrastructure** — `TokenService`, `AfroSmsService`, `S3StorageService`,
+`Services/` now holds **only infrastructure** — `TokenService`, `AfroSmsService` (`ConsoleSmsService` in Development), `S3StorageService`,
 `ImageService`, `ChapaClient`, `ChapaWebhookVerifier`, `RedisCacheService`/`NoOpCacheService`, plus
 `CurrentUser`, `SubscriptionGate` and `ImageValidator`. These keep their interfaces: they are external
 boundaries worth being able to swap or fake. **Handlers get no interface** — one implementation, injected
@@ -136,7 +159,13 @@ subscriptions. Per request:
    decides whether `Organization` and `ApplyUrl` are nulled out for free users (`IsLocked` on the DTO).
 2. Ranking is computed **in SQL** (`OrderByDescending(score)` over weighted matches against the user's
    `UserProfile`) and cached in Redis for 5 min under the key from `FeedCacheKeyExtensions.ToFeedCacheKey` —
-   that key includes userId, country, search, page, pageSize **and tier**.
+   that key includes userId, country, search, **type**, page, pageSize **and tier**. Any new request field that
+   changes the ranked page must be added to the key too, or two different pages share one cache entry.
+   `?type=` narrows on top of the profile's `SeekingType` (it does not override it, so a jobs-only profile
+   asking for scholarships gets nothing — the assistant explains this; see the AI assistant section). It was accepted and silently ignored until 2026-10; the web client
+   (`ethiopia-pathways`) sends it from its Job/Scholarship filter. That client also sends `countryCodes`,
+   `jobCategories`, `scholarshipFields`, `fundingTypes`, `employmentTypes`, `salaryMin/Max` and `isFeatured`,
+   none of which `FeedRequestDto` has — they are still dropped, so those filters do nothing.
 3. Per-user flags (`IsBookmarked`, `ApplicationStatus`) are queried fresh every request and **never cached**.
    Keep that split: anything user-mutable must stay out of `CachedFeedPage`.
 4. Any write that changes listings must call `cache.InvalidateFeedsAsync()` — every listing command does.
@@ -154,7 +183,7 @@ feed DTO but never populated, so feed items carry no apply link even for paid us
 ### Authorization
 
 - JWT bearer, `ClockSkew.Zero`. Login is **phone + OTP** (`AuthController` request-otp / verify-otp via
-  `AfroSmsService`), plus refresh tokens.
+  `AfroSmsService`, or `ConsoleSmsService` in Development — see Local development), plus refresh tokens.
 - **The access token lifetime is the revocation window.** Nothing validates an issued token against the
   database, so a ban, a role change or a logout only takes effect when the current token expires. It is
   `JwtConfig:AccessTokenMinutes` (default 60), clamped to 8 hours in `TokenService` — it was `AddDays(15)`.
@@ -186,12 +215,22 @@ feed DTO but never populated, so feed items carry no apply link even for paid us
   `AuthorizedListings(activeOnly = true)` is the consumer path (job-seekers get `IsActive && DeletedAt == null`;
   `activeOnly: false` keeps already-saved/applied-to listings visible after they go inactive).
   `ManageableListings()` is the staff path (Admin/SuperAdmin see everything including soft-deleted; everyone
-  else gets an empty set, so a missing `[Authorize]` can't leak). Unknown or missing role sees nothing.
-  Add new listing queries through one of these two — never `db.Listings`, and never via the `b.Listing` /
+  else gets an empty set, so a missing `[Authorize]` can't leak). `PublishedListings()` is the public view
+  (active and not deleted) for **every** role, staff included — for consumer surfaces that must not change
+  with the caller's role, like the assistant's `SearchListingsTool` (`AuthorizedListings` would offer an admin
+  closed and deleted listings there; `SearchListingsToolTests` pins this). Unknown or missing role sees nothing.
+  Add new listing queries through one of these three — never `db.Listings`, and never via the `b.Listing` /
   `a.Listing` navigation properties, which bypass the check (join to the authorized set instead).
 - The service depends on `ICurrentUser`, so it only works inside a request. A background job that needs
   listings must take an explicit scope rather than calling it.
-- Admin controllers use `[Authorize(Roles = "Admin")]` and route under `api/v{version}/admin/...`.
+- Admin controllers use `[Authorize(Policy = AppPolicies.AdminAccess)]` and route under `api/v{version}/admin/...`.
+  **Use the policies in `AppPolicies`, never `[Authorize(Roles = ...)]`.** Identity roles are flat, so
+  `Roles = "Admin"` rejects a SuperAdmin who doesn't also hold Admin. `AdminAccess` accepts Admin or
+  SuperAdmin; `SuperAdminAccess` is SuperAdmin only. `RoleHierarchyTests` pins both.
+- **`POST /auth/assign-role` is SuperAdmin only.** `AssignRoleHandler` grants whatever role it is asked
+  for, so when it accepted Admin, any Admin could promote themselves to SuperAdmin. A granted role reaches
+  the user's token on their next sign-in or refresh (`GenerteAccessToken` reloads roles from the database);
+  until then the old token keeps the old roles.
 ### OTP abuse limits
 
 Two independent layers, both required. An OTP send costs money and rings a stranger's phone.
@@ -268,6 +307,46 @@ Pipeline order is also load-bearing, all of it below `UseAuthentication()`: `Map
 Hangfire's middleware 404s an unknown `/hangfire` path), then `UseHangfireDashboardAuth()` (the cookie →
 `HttpContext.User` step, which the *synchronous* dashboard filter depends on), then `UseHangfireDashboard()`.
 
+### AI assistant (Gemini)
+
+`POST /api/v1/assistant/chat` (`[Authorize]`) → `SendAssistantMessageHandler` → `AssistantAgent`, which runs
+the tool loop against `IChatModel` (`GeminiClient`; `FakeChatModel` in tests) for at most 3 tool rounds. Tools
+implement `IAssistantTool` and are registered in `AddInfrastructure`; the system prompt is
+`Prompts/AssistantPrompts.cs`, and every tool must be explained there (`AiChatbotTest` checks the names).
+
+| Tool | Does | Goes through |
+|---|---|---|
+| `search_listings` | keyword/type/country search | `ListingAuthorizationService.PublishedListings()` |
+| `get_listing_details` | one listing's full details, to summarize | `GetListingDetailHandler` (same as `GET /listings/{id}`) |
+| `recommend_listings` | the user's own ranked feed + the profile it was ranked against | `GetFeedHandler`, `GetProfileHandler` |
+
+Rules every tool follows:
+
+- **The user is always `ICurrentUser`, never a tool argument.** No tool has a user parameter, and extra
+  arguments are ignored, so the model cannot be talked into acting for, or reading the profile of, someone
+  else. `AssistantToolTests` slips another user's id into the arguments and asserts nothing changes.
+- **Reuse the consumer handlers, don't re-query.** That is what keeps the paywall (no organization or apply
+  link for free users), the free-tier cap and the feed ranking identical to the app's.
+- **Arguments are untrusted input.** Parse them with `ToolFormat.GetString`, and return bad input as an
+  `error` object the model can read rather than throwing.
+- **Keep payloads small — every token is paid for on every round.** `ToolFormat.Shorten` caps descriptions
+  (1,500 chars for details, 200 per recommendation) and marks the cut. Enums go out as names
+  (`ToolFormat.EnumName`), and only the profile fields ranking uses are sent — not name, birth date, sex or
+  passport status, which would otherwise go to Google on every round.
+- **Say why a result is empty when the reason is known.** `recommend_listings` adds a `note` when the
+  requested type is excluded by the profile's `SeekingType` (the feed narrows on top of it, so a jobs-only
+  profile asking for scholarships always gets nothing). Without it the model can only say "none found",
+  which reads as "there are no scholarships"; with it, it tells the user to change their profile settings.
+
+**Known limitation — follow-ups re-search by title.** The app sends history as plain text, so tool calls and
+listing ids from earlier turns are gone by the next one. For "summarize the first one" the prompt has the
+model call `search_listings` with the title, then `get_listing_details`: two tool rounds and a second lookup,
+and it fails where the title is ambiguous or the search (`ILike` on title/organization) doesn't match. The
+proper fix is to return the referenced listing ids to the app with each reply and have it send them back with
+the history.
+
+`ILike` is Postgres-only, so keyword search is untested here — check it against the local Docker database.
+
 ### Infrastructure notes
 
 - **Redis is optional.** `Program.cs` registers `RedisCacheService` only when the connection string is set and
@@ -338,8 +417,11 @@ blocks the deploy.
    lazily (when a service is constructed) can go in `ConfigureAppConfiguration`.
 3. **Auth**: `TestAuthHandler` authenticates from `X-Test-UserId` / `X-Test-Roles`. All three
    `AuthenticationOptions` defaults must be overridden, because `Program.cs` names JwtBearer explicitly.
-4. **`ISmsService` and `IChapaClient` are replaced by fakes** so no test touches the network;
-   `FakeSmsService.LastOtpFor(phone)` is how a test "reads the SMS".
+4. **`ISmsService`, `IChapaClient`, `INotificationPublisher` and `IChatModel` are replaced by fakes** so no
+   test touches the network; `FakeSmsService.LastOtpFor(phone)` is how a test "reads the SMS".
+   `FakeChatModel` answers "fake reply" unless a test calls `ScriptToolCall(tool, args)`: the next chat then
+   asks for that tool, and `LastToolResult()` returns what the tool handed the model — the real endpoint,
+   agent and tool, with the user taken from the request.
 
 Two provider-specific fallbacks in `ApplicationDbContext` exist purely so this works: the `UserProfile` enum
 arrays become a CSV string, and `DateTimeOffset` becomes a binary long (SQLite cannot `ORDER BY` one, and the

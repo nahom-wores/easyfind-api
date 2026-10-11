@@ -2,6 +2,7 @@ using Asp.Versioning;
 using EasyFind.Api.Features.Admin.Queries;
 using EasyFind.Api.Models.Admin;
 using EasyFind.Api.Models.Dto.Common;
+using EasyFind.Api.Models.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -10,7 +11,7 @@ namespace EasyFind.Api.Controllers.v1;
 [Route("api/v{version:apiVersion}/admin/payments")]
 [ApiController]
 [ApiVersion("1.0")]
-[Authorize(Roles = "Admin")]
+[Authorize(Policy = AppPolicies.AdminAccess)]
 public class AdminPaymentsController : ApiControllerBase
 {
     [HttpGet]
